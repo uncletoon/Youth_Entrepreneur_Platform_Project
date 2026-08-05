@@ -1,0 +1,419 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SYSTEM_ADMIN
+  ADMIN
+  ENTREPRENEUR
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING_VERIFICATION
+}
+
+enum ExpertApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BusinessStage {
+  IDEA
+  PREPARATION
+  STARTUP
+  OPERATING
+  GROWTH
+}
+
+enum ClassificationStatus {
+  SUGGESTED
+  CONFIRMED
+  DISPUTED
+  ADMIN_CORRECTED
+}
+
+enum AssessmentStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  UNDER_REVIEW
+  REVIEWED
+  ARCHIVED
+}
+
+enum ReadinessLevel {
+  NOT_READY
+  EMERGING_READINESS
+  MODERATELY_READY
+  READY
+  HIGHLY_READY
+}
+
+enum RiskLevel {
+  HIGH_RISK
+  MODERATE_RISK
+  LOW_RISK
+}
+
+enum RecommendationStatus {
+  NEW
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+}
+
+enum RecommendationSource {
+  SYSTEM
+  ADMIN
+}
+
+enum QuestionScope {
+  CORE
+  SECTOR
+  STAGE
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  LIKERT
+  BOOLEAN
+  NUMBER
+  CURRENCY
+  SHORT_TEXT
+  LONG_TEXT
+  SCENARIO
+  FILE_EVIDENCE
+}
+
+model User {
+  id                    String               @id @default(uuid()) @db.Uuid
+  fullName              String
+  email                 String?              @unique
+  phone                 String?              @unique
+  passwordHash          String
+  role                  UserRole             @default(ENTREPRENEUR)
+  status                UserStatus           @default(ACTIVE)
+  consentAt             DateTime
+  lastLoginAt           DateTime?
+  contactVerifiedAt     DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  refreshTokens         RefreshToken[]
+  passwordResetTokens   PasswordResetToken[]
+  verificationTokens    VerificationToken[]
+  entrepreneurProfile   EntrepreneurProfile?
+  expertProfile         ExpertProfile?       @relation("ExpertAccount")
+  expertReviews         ExpertProfile[]      @relation("ExpertReviewer")
+  businesses            Business[]
+  assessmentSessions    AssessmentSession[]
+  recommendations       Recommendation[]
+  adminFeedbackGiven    AdminFeedback[]      @relation("AdminFeedbackAuthor")
+  adminFeedbackReceived AdminFeedback[]      @relation("AdminFeedbackRecipient")
+  auditLogs             AuditLog[]           @relation("AuditActor")
+
+  @@index([role, status])
+  @@index([createdAt])
+}
+
+model ExpertProfile {
+  id                   String               @id @default(uuid()) @db.Uuid
+  userId               String               @unique @db.Uuid
+  expertiseField       String
+  proficiencyLevel     String
+  yearsOfExperience    Int
+  employmentStatus     String
+  workplace            String?
+  position             String?
+  highestQualification String
+  institution          String
+  certifications       String?
+  professionalSummary  String
+  evidenceUrl          String?
+  approvalStatus       ExpertApprovalStatus @default(DRAFT)
+  reviewNote           String?
+  submittedAt          DateTime?
+  reviewedAt           DateTime?
+  reviewedById         String?              @db.Uuid
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  user                 User                 @relation("ExpertAccount", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy           User?                @relation("ExpertReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([approvalStatus, submittedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model VerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model EntrepreneurProfile {
+  id                         String   @id @default(uuid()) @db.Uuid
+  userId                     String   @unique @db.Uuid
+  ageGroup                   String?
+  gender                     String?
+  province                   String?
+  district                   String?
+  sectorLocation             String?
+  educationLevel             String?
+  employmentStatus           String?
+  entrepreneurshipExperience String?
+  previousBusinessExperience String?
+  relevantTraining           String?
+  digitalAccess              String?
+  preferredLanguage          String   @default("English")
+  completionPercent          Int      @default(0)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Sector {
+  id              String                   @id @default(uuid()) @db.Uuid
+  code            String                   @unique
+  name            String                   @unique
+  description     String
+  active          Boolean                  @default(true)
+  keywords        String[]
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  businesses      Business[]
+  classifications BusinessClassification[]
+  questions       Question[]
+}
+
+model Business {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  userId                  String                   @db.Uuid
+  sectorId                String?                  @db.Uuid
+  name                    String
+  description             String
+  problemSolved           String?
+  productOrService        String
+  targetCustomers         String?
+  location                String?
+  stage                   BusinessStage
+  revenueModel            String?
+  estimatedStartupCapital Decimal?                 @db.Decimal(14, 2)
+  availableCapital        Decimal?                 @db.Decimal(14, 2)
+  teamSize                Int                      @default(1)
+  registrationStatus      String?
+  salesChannel            String?
+  mainRisks               String?
+  profileCompletion       Int                      @default(0)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sector                  Sector?                  @relation(fields: [sectorId], references: [id])
+  classifications         BusinessClassification[]
+  assessmentSessions      AssessmentSession[]
+  adminFeedback           AdminFeedback[]
+  recommendations         Recommendation[]
+
+  @@index([userId, stage])
+  @@index([sectorId])
+}
+
+model BusinessClassification {
+  id                String               @id @default(uuid()) @db.Uuid
+  businessId        String               @db.Uuid
+  suggestedSectorId String               @db.Uuid
+  confidence        Float
+  explanation       String
+  matchedKeywords   String[]
+  status            ClassificationStatus @default(SUGGESTED)
+  correctionReason  String?
+  confirmedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  suggestedSector   Sector               @relation(fields: [suggestedSectorId], references: [id])
+
+  @@index([status, createdAt])
+}
+
+model AssessmentDomain {
+  id           String     @id @default(uuid()) @db.Uuid
+  code         String     @unique
+  name         String
+  description  String
+  weight       Float      @default(1)
+  displayOrder Int
+  questions    Question[]
+}
+
+model Question {
+  id            String               @id @default(uuid()) @db.Uuid
+  code          String               @unique
+  prompt        String
+  helpText      String?
+  type          QuestionType
+  scope         QuestionScope
+  domainId      String               @db.Uuid
+  sectorId      String?              @db.Uuid
+  stage         BusinessStage?
+  required      Boolean              @default(true)
+  weight        Float                @default(1)
+  options       Json?
+  scoringConfig Json?
+  displayOrder  Int
+  active        Boolean              @default(true)
+  version       Int                  @default(1)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  domain        AssessmentDomain     @relation(fields: [domainId], references: [id])
+  sector        Sector?              @relation(fields: [sectorId], references: [id])
+  responses     AssessmentResponse[]
+
+  @@index([scope, active, displayOrder])
+  @@index([sectorId, stage])
+}
+
+model AssessmentSession {
+  id              String               @id @default(uuid()) @db.Uuid
+  userId          String               @db.Uuid
+  businessId      String               @db.Uuid
+  status          AssessmentStatus     @default(DRAFT)
+  templateVersion String               @default("mvp-v1")
+  scoringVersion  String               @default("readiness-rules-v1")
+  startedAt       DateTime             @default(now())
+  submittedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business        Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses       AssessmentResponse[]
+  result          AssessmentResult?
+
+  @@index([userId, status])
+  @@index([businessId, createdAt])
+}
+
+model AssessmentResponse {
+  id         String            @id @default(uuid()) @db.Uuid
+  sessionId  String            @db.Uuid
+  questionId String            @db.Uuid
+  answer     Json
+  rawScore   Float?
+  maxScore   Float?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  session    AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question   Question          @relation(fields: [questionId], references: [id])
+
+  @@unique([sessionId, questionId])
+}
+
+model AssessmentResult {
+  id              String            @id @default(uuid()) @db.Uuid
+  sessionId       String            @unique @db.Uuid
+  overallScore    Float
+  readinessLevel  ReadinessLevel
+  riskLevel       RiskLevel
+  domainScores    Json
+  strengths       String[]
+  gaps            String[]
+  positiveFactors String[]
+  riskFactors     String[]
+  disclaimer      String
+  rulesVersion    String
+  createdAt       DateTime          @default(now())
+  session         AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model Recommendation {
+  id            String               @id @default(uuid()) @db.Uuid
+  userId        String               @db.Uuid
+  businessId    String?              @db.Uuid
+  title         String
+  description   String
+  category      String
+  priority      String
+  relatedDomain String?
+  actionSteps   String[]
+  status        RecommendationStatus @default(NEW)
+  source        RecommendationSource @default(SYSTEM)
+  rulesVersion  String
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business      Business?            @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([businessId, createdAt])
+}
+
+model AdminFeedback {
+  id             String    @id @default(uuid()) @db.Uuid
+  entrepreneurId String    @db.Uuid
+  adminId        String    @db.Uuid
+  businessId     String?   @db.Uuid
+  message        String
+  createdAt      DateTime  @default(now())
+  entrepreneur   User      @relation("AdminFeedbackRecipient", fields: [entrepreneurId], references: [id], onDelete: Cascade)
+  admin          User      @relation("AdminFeedbackAuthor", fields: [adminId], references: [id], onDelete: Cascade)
+  business       Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([entrepreneurId, createdAt])
+  @@index([businessId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  entityType String
+  entityId   String?
+  oldValues  Json?
+  newValues  Json?
+  reason     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+}

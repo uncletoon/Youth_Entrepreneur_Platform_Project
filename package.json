@@ -1,0 +1,37 @@
+{
+  "name": "yersps",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "npm run db:generate",
+    "dev": "concurrently -n web,api -c green,blue \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run dev -w @yersps/web",
+    "dev:api": "npm run dev -w @yersps/api",
+    "build": "npm run build -w @yersps/contracts && npm run db:generate && npm run build -w @yersps/api && npm run build -w @yersps/web",
+    "typecheck": "npm run build -w @yersps/contracts && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @yersps/api",
+    "db:migrate": "npm run db:migrate -w @yersps/api",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w @yersps/api",
+    "db:seed": "npm run db:seed -w @yersps/api",
+    "db:studio": "npm run db:studio -w @yersps/api",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.4",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.10"
+  }
+}
