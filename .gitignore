@@ -145,3 +145,4 @@ tmp/
 playwright-report/
 test-results/
 apps/api/src/generated/prisma/
+.agents/
