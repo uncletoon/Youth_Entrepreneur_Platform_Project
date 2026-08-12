@@ -1,17 +1,20 @@
 import type { EntrepreneurProfileInput } from '@yersps/contracts';
 import {
   CheckCircle2,
-  Globe,
+  Download,
   GraduationCap,
   MapPin,
   Smartphone,
+  ShieldOff,
   User,
   Wrench,
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { AppShell } from '../components/AppShell';
 import { useAuth } from '../features/auth/AuthContext';
+import { authApi } from '../features/auth/auth-api';
 import { entrepreneurApi } from '../features/entrepreneur/entrepreneur-api';
+import { useNavigate } from '../routing/router';
 
 interface FieldConfig {
   key: keyof EntrepreneurProfileInput;
@@ -54,15 +57,15 @@ const DIGITAL_ACCESS_OPTIONS = [
   'Smartphone + computer',
   'Reliable broadband',
 ];
-const LANGUAGES = [
-  'Kinyarwanda',
-  'English',
-  'French',
-  'Swahili',
-  'Other',
-];
+const LANGUAGES = ['Kinyarwanda', 'English', 'French', 'Swahili', 'Other'];
 
-const PROVINCES = ['Kigali City', 'Eastern Province', 'Northern Province', 'Southern Province', 'Western Province'];
+const PROVINCES = [
+  'Kigali City',
+  'Eastern Province',
+  'Northern Province',
+  'Southern Province',
+  'Western Province',
+];
 
 const FIELDS: FieldConfig[] = [
   { key: 'ageGroup', label: 'Age group', type: 'select', options: AGE_GROUPS },
@@ -112,7 +115,11 @@ const FIELDS: FieldConfig[] = [
   },
 ];
 
-const SECTION_GROUPS: { label: string; icon: typeof User; keys: (keyof EntrepreneurProfileInput)[] }[] = [
+const SECTION_GROUPS: {
+  label: string;
+  icon: typeof User;
+  keys: (keyof EntrepreneurProfileInput)[];
+}[] = [
   {
     label: 'Personal information',
     icon: User,
@@ -141,7 +148,8 @@ const SECTION_GROUPS: { label: string; icon: typeof User; keys: (keyof Entrepren
 ];
 
 export const ProfilePage = () => {
-  const { accessToken, refreshUser } = useAuth();
+  const { accessToken, refreshUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [profile, setProfile] = useState<Partial<EntrepreneurProfileInput> | null>(null);
@@ -152,7 +160,9 @@ export const ProfilePage = () => {
     if (accessToken)
       entrepreneurApi
         .profile(accessToken)
-        .then((p) => { setProfile(p); })
+        .then((p) => {
+          setProfile(p);
+        })
         .catch((reason) =>
           setError(reason instanceof Error ? reason.message : 'Could not load profile.'),
         )
@@ -198,8 +208,8 @@ export const ProfilePage = () => {
         </div>
         <div>
           <p className="profile-intro-text">
-            Keep your personal, location, education, and background information current. This
-            helps YERSPS provide more relevant assessments and guidance.
+            Keep your personal, location, education, and background information current. This helps
+            YERSPS provide more relevant assessments and guidance.
           </p>
           {profile && (
             <span className="profile-status-badge">
@@ -275,6 +285,35 @@ export const ProfilePage = () => {
           </button>
         </form>
       )}
+      <section className="workflow-card privacy-controls">
+        <div>
+          <span className="eyebrow">Privacy and account</span>
+          <h2>Control your YERSPS data</h2>
+          <p>Download a portable copy of your records or deactivate access to your account.</p>
+        </div>
+        <button type="button" onClick={() => void authApi.exportAccount(accessToken as string)}>
+          <Download aria-hidden="true" /> Download my data
+        </button>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const password = String(form.get('password'));
+            if (!window.confirm('Deactivate your account and end all active sessions?')) return;
+            await authApi.deactivateAccount(accessToken as string, password);
+            await logout();
+            navigate('/login', { replace: true });
+          }}
+        >
+          <label>
+            Password confirmation
+            <input name="password" type="password" required autoComplete="current-password" />
+          </label>
+          <button type="submit" className="danger-button">
+            <ShieldOff aria-hidden="true" /> Deactivate account
+          </button>
+        </form>
+      </section>
     </AppShell>
   );
 };

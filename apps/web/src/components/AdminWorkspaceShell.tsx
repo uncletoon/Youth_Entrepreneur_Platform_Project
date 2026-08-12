@@ -6,29 +6,33 @@ import {
   LogOut,
   Settings,
   ShieldCheck,
+  UserRound,
   Users,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../features/auth/AuthContext';
 import { Link, Redirect, useNavigate, useRouter } from '../routing/router';
 import { Brand } from './Brand';
+import { NotificationCenter } from './NotificationCenter';
 
 const expertLinks: { to: string; label: string; Icon: typeof LayoutDashboard }[] = [
   { to: '/admin', label: 'Overview', Icon: LayoutDashboard },
   { to: '/admin/entrepreneurs', label: 'Entrepreneurs', Icon: Users },
   { to: '/admin/reviews', label: 'Assessment Reviews', Icon: ClipboardList },
   { to: '/admin/questions', label: 'Question Bank', Icon: FileText },
-  { to: '/admin/configuration', label: 'Configuration', Icon: Settings },
+  { to: '/admin/profile', label: 'Profile', Icon: UserRound },
 ];
 
 const systemLinks: { to: string; label: string; Icon: typeof LayoutDashboard }[] = [
+  { to: '/admin/configuration', label: 'Configuration', Icon: Settings },
   { to: '/admin/applications', label: 'Expert Applications', Icon: ShieldCheck },
+  { to: '/admin/assignments', label: 'Expert Assignments', Icon: Users },
   { to: '/admin/users', label: 'Users & Roles', Icon: Users },
   { to: '/admin/audits', label: 'Audit Logs', Icon: BarChart3 },
 ];
 
 export const AdminWorkspaceShell = ({ children }: { children: ReactNode }) => {
-  const { user, logout } = useAuth();
+  const { user, accessToken, logout } = useAuth();
   const { path } = useRouter();
   const navigate = useNavigate();
   const isSystem = user?.role === 'SYSTEM_ADMIN';
@@ -43,6 +47,7 @@ export const AdminWorkspaceShell = ({ children }: { children: ReactNode }) => {
       <header className="dashboard-header admin-dashboard-header">
         <Brand />
         <div className="admin-header-right">
+          <NotificationCenter accessToken={accessToken} />
           <div className="admin-header-badge">
             <ShieldCheck />
             <span>{isSystem ? 'System Administrator' : 'Approved Expert'}</span>
@@ -63,7 +68,7 @@ export const AdminWorkspaceShell = ({ children }: { children: ReactNode }) => {
       <div className="admin-layout">
         <aside className="admin-nav">
           <div className="admin-nav__brand">
-            <h2>Expert workspace</h2>
+            <h2>{isSystem ? 'System administration' : 'Expert workspace'}</h2>
             <small>{user?.fullName ?? user?.email}</small>
           </div>
           <nav className="admin-nav__links">

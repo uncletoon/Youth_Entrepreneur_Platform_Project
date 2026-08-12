@@ -1,11 +1,8 @@
 import { PrismaPg } from '@prisma/adapter-pg';
-import argon2 from 'argon2';
 import dotenv from 'dotenv';
-import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '../src/generated/prisma/client.js';
-import { UserRole } from '../src/generated/prisma/enums.js';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(directory, '../../../.env'), quiet: true });
@@ -107,77 +104,6 @@ const domains = [
   ['LEADERSHIP', 'Leadership, Team and Networking', 7],
   ['RISK', 'Risk, Legal and Sustainability Readiness', 8],
 ] as const;
-
-async function seedUser(email: string, fullName: string, role: UserRole, envKey: string) {
-  const supplied = process.env[envKey];
-  const generated = !supplied;
-  const password = supplied || randomBytes(15).toString('base64url') + 'A1!';
-  const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (!existing) {
-    await prisma.user.create({
-      data: {
-        email,
-        fullName,
-        role,
-        passwordHash,
-        consentAt: new Date(),
-        ...(role === UserRole.ENTREPRENEUR ? { entrepreneurProfile: { create: {} } } : {}),
-        ...(role === UserRole.ADMIN
-          ? {
-              expertProfile: {
-                create: {
-                  expertiseField: 'Business readiness and enterprise development',
-                  proficiencyLevel: 'Expert',
-                  yearsOfExperience: 8,
-                  employmentStatus: 'Employed',
-                  workplace: 'YERSPS Demonstration Programme',
-                  position: 'Business Readiness Advisor',
-                  highestQualification: 'Masters degree',
-                  institution: 'Demo Institution',
-                  professionalSummary:
-                    'Experienced business readiness advisor supporting entrepreneurs with planning, finance, operations, and market validation.',
-                  approvalStatus: 'APPROVED',
-                  submittedAt: new Date(),
-                  reviewedAt: new Date(),
-                },
-              },
-            }
-          : {}),
-      },
-    });
-    console.log(`Created ${role}: ${email} / ${password}${generated ? ' (generated)' : ''}`);
-  } else if (supplied) {
-    await prisma.user.update({ where: { id: existing.id }, data: { passwordHash } });
-    console.log(`Updated ${role} password from ${envKey}: ${email}`);
-  } else {
-    console.log(`Kept existing ${role}: ${email}`);
-  }
-
-  if (role === UserRole.ADMIN) {
-    const admin = await prisma.user.findUniqueOrThrow({ where: { email } });
-    await prisma.expertProfile.upsert({
-      where: { userId: admin.id },
-      update: { approvalStatus: 'APPROVED' },
-      create: {
-        userId: admin.id,
-        expertiseField: 'Business readiness and enterprise development',
-        proficiencyLevel: 'Expert',
-        yearsOfExperience: 8,
-        employmentStatus: 'Employed',
-        workplace: 'YERSPS Demonstration Programme',
-        position: 'Business Readiness Advisor',
-        highestQualification: 'Masters degree',
-        institution: 'Demo Institution',
-        professionalSummary:
-          'Experienced business readiness advisor supporting entrepreneurs with planning, finance, operations, and market validation.',
-        approvalStatus: 'APPROVED',
-        submittedAt: new Date(),
-        reviewedAt: new Date(),
-      },
-    });
-  }
-}
 
 async function main() {
   for (const [code, name, description, keywords] of sectors) {
@@ -318,36 +244,186 @@ async function main() {
       'I understand the registrations, permits, taxes, and sustainability duties relevant to the business.',
       20,
     ],
-    ['CORE_MINDSET_03', 'MINDSET', 'I set measurable business goals and review my progress regularly.', 21],
-    ['CORE_MINDSET_04', 'MINDSET', 'I seek constructive feedback and use it to improve my decisions.', 22],
-    ['CORE_MINDSET_05', 'MINDSET', 'I can make responsible decisions when information is incomplete.', 23],
-    ['CORE_OPPORTUNITY_03', 'OPPORTUNITY', 'I can describe the specific value customers receive from my solution.', 24],
-    ['CORE_OPPORTUNITY_04', 'OPPORTUNITY', 'I have compared this opportunity with realistic alternative ideas.', 25],
-    ['CORE_OPPORTUNITY_05', 'OPPORTUNITY', 'I can explain why this is the right time to pursue this opportunity.', 26],
-    ['CORE_MARKET_03', 'MARKET', 'I have defined a specific group of customers to serve first.', 27],
-    ['CORE_MARKET_04', 'MARKET', 'I know how I will reach, communicate with, and retain customers.', 28],
-    ['CORE_MARKET_05', 'MARKET', 'I have tested whether customers are willing and able to pay.', 29],
-    ['CORE_FINANCE_03', 'FINANCE', 'I separate expected one-time startup costs from recurring operating costs.', 30],
-    ['CORE_FINANCE_04', 'FINANCE', 'I know the sales volume needed for the business to cover its costs.', 31],
-    ['CORE_FINANCE_05', 'FINANCE', 'I keep or plan to keep reliable financial records and supporting evidence.', 32],
-    ['CORE_MODEL_03', 'MODEL', 'I can describe the resources required to deliver the product or service.', 33],
-    ['CORE_MODEL_04', 'MODEL', 'I understand the most important assumptions in my business model.', 34],
-    ['CORE_MODEL_05', 'MODEL', 'I have a practical plan for testing and improving the business model.', 35],
-    ['CORE_OPERATIONS_03', 'OPERATIONS', 'I have identified dependable suppliers or alternative sources for key inputs.', 36],
-    ['CORE_OPERATIONS_04', 'OPERATIONS', 'I can estimate the time and capacity needed to meet expected demand.', 37],
-    ['CORE_OPERATIONS_05', 'OPERATIONS', 'I have a practical method for monitoring quality and customer complaints.', 38],
-    ['CORE_INNOVATION_03', 'INNOVATION', 'I collect evidence before making major changes to the solution.', 39],
-    ['CORE_INNOVATION_04', 'INNOVATION', 'I can protect or differentiate the knowledge, design, or process behind the idea.', 40],
-    ['CORE_INNOVATION_05', 'INNOVATION', 'I have a repeatable way to turn learning into product or service improvements.', 41],
-    ['CORE_DIGITAL_03', 'DIGITAL', 'I can select affordable digital tools that match the needs of the business.', 42],
-    ['CORE_DIGITAL_04', 'DIGITAL', 'I can use digital records to monitor customers, sales, or operations.', 43],
-    ['CORE_DIGITAL_05', 'DIGITAL', 'I have a plan for reliable internet, device access, backups, and account security.', 44],
-    ['CORE_LEADERSHIP_03', 'LEADERSHIP', 'Roles and decision responsibilities are clear among the people involved.', 45],
-    ['CORE_LEADERSHIP_04', 'LEADERSHIP', 'I can communicate the business direction clearly to partners and team members.', 46],
-    ['CORE_LEADERSHIP_05', 'LEADERSHIP', 'I know when to seek specialist support instead of making decisions alone.', 47],
-    ['CORE_RISK_03', 'RISK', 'I have identified actions that reduce the most serious business risks.', 48],
-    ['CORE_RISK_04', 'RISK', 'I understand how the business affects people, community, and the environment.', 49],
-    ['CORE_RISK_05', 'RISK', 'I have considered continuity plans for disruptions, losses, or key-person absence.', 50],
+    [
+      'CORE_MINDSET_03',
+      'MINDSET',
+      'I set measurable business goals and review my progress regularly.',
+      21,
+    ],
+    [
+      'CORE_MINDSET_04',
+      'MINDSET',
+      'I seek constructive feedback and use it to improve my decisions.',
+      22,
+    ],
+    [
+      'CORE_MINDSET_05',
+      'MINDSET',
+      'I can make responsible decisions when information is incomplete.',
+      23,
+    ],
+    [
+      'CORE_OPPORTUNITY_03',
+      'OPPORTUNITY',
+      'I can describe the specific value customers receive from my solution.',
+      24,
+    ],
+    [
+      'CORE_OPPORTUNITY_04',
+      'OPPORTUNITY',
+      'I have compared this opportunity with realistic alternative ideas.',
+      25,
+    ],
+    [
+      'CORE_OPPORTUNITY_05',
+      'OPPORTUNITY',
+      'I can explain why this is the right time to pursue this opportunity.',
+      26,
+    ],
+    [
+      'CORE_MARKET_03',
+      'MARKET',
+      'I have defined a specific group of customers to serve first.',
+      27,
+    ],
+    [
+      'CORE_MARKET_04',
+      'MARKET',
+      'I know how I will reach, communicate with, and retain customers.',
+      28,
+    ],
+    [
+      'CORE_MARKET_05',
+      'MARKET',
+      'I have tested whether customers are willing and able to pay.',
+      29,
+    ],
+    [
+      'CORE_FINANCE_03',
+      'FINANCE',
+      'I separate expected one-time startup costs from recurring operating costs.',
+      30,
+    ],
+    [
+      'CORE_FINANCE_04',
+      'FINANCE',
+      'I know the sales volume needed for the business to cover its costs.',
+      31,
+    ],
+    [
+      'CORE_FINANCE_05',
+      'FINANCE',
+      'I keep or plan to keep reliable financial records and supporting evidence.',
+      32,
+    ],
+    [
+      'CORE_MODEL_03',
+      'MODEL',
+      'I can describe the resources required to deliver the product or service.',
+      33,
+    ],
+    [
+      'CORE_MODEL_04',
+      'MODEL',
+      'I understand the most important assumptions in my business model.',
+      34,
+    ],
+    [
+      'CORE_MODEL_05',
+      'MODEL',
+      'I have a practical plan for testing and improving the business model.',
+      35,
+    ],
+    [
+      'CORE_OPERATIONS_03',
+      'OPERATIONS',
+      'I have identified dependable suppliers or alternative sources for key inputs.',
+      36,
+    ],
+    [
+      'CORE_OPERATIONS_04',
+      'OPERATIONS',
+      'I can estimate the time and capacity needed to meet expected demand.',
+      37,
+    ],
+    [
+      'CORE_OPERATIONS_05',
+      'OPERATIONS',
+      'I have a practical method for monitoring quality and customer complaints.',
+      38,
+    ],
+    [
+      'CORE_INNOVATION_03',
+      'INNOVATION',
+      'I collect evidence before making major changes to the solution.',
+      39,
+    ],
+    [
+      'CORE_INNOVATION_04',
+      'INNOVATION',
+      'I can protect or differentiate the knowledge, design, or process behind the idea.',
+      40,
+    ],
+    [
+      'CORE_INNOVATION_05',
+      'INNOVATION',
+      'I have a repeatable way to turn learning into product or service improvements.',
+      41,
+    ],
+    [
+      'CORE_DIGITAL_03',
+      'DIGITAL',
+      'I can select affordable digital tools that match the needs of the business.',
+      42,
+    ],
+    [
+      'CORE_DIGITAL_04',
+      'DIGITAL',
+      'I can use digital records to monitor customers, sales, or operations.',
+      43,
+    ],
+    [
+      'CORE_DIGITAL_05',
+      'DIGITAL',
+      'I have a plan for reliable internet, device access, backups, and account security.',
+      44,
+    ],
+    [
+      'CORE_LEADERSHIP_03',
+      'LEADERSHIP',
+      'Roles and decision responsibilities are clear among the people involved.',
+      45,
+    ],
+    [
+      'CORE_LEADERSHIP_04',
+      'LEADERSHIP',
+      'I can communicate the business direction clearly to partners and team members.',
+      46,
+    ],
+    [
+      'CORE_LEADERSHIP_05',
+      'LEADERSHIP',
+      'I know when to seek specialist support instead of making decisions alone.',
+      47,
+    ],
+    [
+      'CORE_RISK_03',
+      'RISK',
+      'I have identified actions that reduce the most serious business risks.',
+      48,
+    ],
+    [
+      'CORE_RISK_04',
+      'RISK',
+      'I understand how the business affects people, community, and the environment.',
+      49,
+    ],
+    [
+      'CORE_RISK_05',
+      'RISK',
+      'I have considered continuity plans for disruptions, losses, or key-person absence.',
+      50,
+    ],
   ] as const;
 
   for (const [code, domainCode, prompt, displayOrder] of questions) {
@@ -458,19 +534,7 @@ async function main() {
     });
   }
 
-  await seedUser(
-    'entrepreneur@yersps.local',
-    'Demo Entrepreneur',
-    UserRole.ENTREPRENEUR,
-    'SEED_ENTREPRENEUR_PASSWORD',
-  );
-  await seedUser('admin@yersps.local', 'Demo Admin', UserRole.ADMIN, 'SEED_ADMIN_PASSWORD');
-  await seedUser(
-    'system@yersps.local',
-    'System Administrator',
-    UserRole.SYSTEM_ADMIN,
-    'SEED_SYSTEM_ADMIN_PASSWORD',
-  );
+  console.log('Reference sectors, assessment domains, and questions are ready.');
 }
 
 main()

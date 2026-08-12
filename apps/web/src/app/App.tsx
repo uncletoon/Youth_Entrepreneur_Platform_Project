@@ -39,11 +39,13 @@ const ResultPage = lazy(() =>
 const RecoveryPage = lazy(() =>
   import('../pages/RecoveryPage').then((module) => ({ default: module.RecoveryPage })),
 );
-const VerificationPage = lazy(() =>
-  import('../pages/VerificationPage').then((module) => ({ default: module.VerificationPage })),
-);
 const ExpertProfilePage = lazy(() =>
   import('../pages/ExpertProfilePage').then((module) => ({ default: module.ExpertProfilePage })),
+);
+const WorkspaceProfilePage = lazy(() =>
+  import('../pages/WorkspaceProfilePage').then((module) => ({
+    default: module.WorkspaceProfilePage,
+  })),
 );
 const FeedbackPage = lazy(() =>
   import('../pages/FeedbackPage').then((module) => ({ default: module.FeedbackPage })),
@@ -59,7 +61,10 @@ const AssignmentsPage = lazy(() =>
 
 const protectedPage = (page: ReactNode) => <ProtectedRoute>{page}</ProtectedRoute>;
 const adminPage = (page: ReactNode) => (
-  <ProtectedRoute roles={['ADMIN', 'SYSTEM_ADMIN']}>{page}</ProtectedRoute>
+  <ProtectedRoute roles={['EXPERT', 'SYSTEM_ADMIN']}>{page}</ProtectedRoute>
+);
+const systemPage = (page: ReactNode) => (
+  <ProtectedRoute roles={['SYSTEM_ADMIN']}>{page}</ProtectedRoute>
 );
 
 export const App = () => {
@@ -81,12 +86,10 @@ export const App = () => {
   else if (path === '/app/feedback') page = protectedPage(<FeedbackPage />);
   else if (path === '/app/recommendations') page = protectedPage(<RecommendationsPage />);
   else if (path === '/app/assessment') page = protectedPage(<AssessmentPage />);
-  else if (path === '/app/verify-contact') page = protectedPage(<VerificationPage />);
-
   // Expert/Admin routes
   else if (path === '/expert/profile')
     page = (
-      <ProtectedRoute roles={['ADMIN']}>
+      <ProtectedRoute roles={['EXPERT']}>
         <ExpertProfilePage />
       </ProtectedRoute>
     );
@@ -94,17 +97,18 @@ export const App = () => {
   else if (path === '/admin/entrepreneurs')
     page = adminPage(<AdminDashboardPage section="entrepreneurs" />);
   else if (path === '/admin/reviews') page = adminPage(<AdminDashboardPage section="reviews" />);
+  else if (path === '/admin/profile') page = adminPage(<WorkspaceProfilePage />);
   else if (path === '/admin/questions')
     page = adminPage(<AdminDashboardPage section="questions" />);
-  else if (path === '/admin/questions/new')
-    page = adminPage(<AdminQuestionFormPage />);
+  else if (path === '/admin/questions/new') page = adminPage(<AdminQuestionFormPage />);
   else if (path === '/admin/configuration')
-    page = adminPage(<AdminDashboardPage section="configuration" />);
+    page = systemPage(<AdminDashboardPage section="configuration" />);
   else if (path === '/admin/applications')
-    page = adminPage(<AdminDashboardPage section="applications" />);
-  else if (path === '/admin/users') page = adminPage(<AdminDashboardPage section="users" />);
-  else if (path === '/admin/audits') page = adminPage(<AdminDashboardPage section="audits" />);
-
+    page = systemPage(<AdminDashboardPage section="applications" />);
+  else if (path === '/admin/assignments')
+    page = systemPage(<AdminDashboardPage section="assignments" />);
+  else if (path === '/admin/users') page = systemPage(<AdminDashboardPage section="users" />);
+  else if (path === '/admin/audits') page = systemPage(<AdminDashboardPage section="audits" />);
   else {
     // Dynamic routes
     const resultMatch = path.match(/^\/app\/results\/([0-9a-f-]+)$/i);
@@ -113,16 +117,12 @@ export const App = () => {
 
     const entrepreneurMatch = path.match(/^\/admin\/entrepreneurs\/([0-9a-f-]+)$/i);
     const entrepreneurId = entrepreneurMatch?.[1];
-    if (entrepreneurId)
-      page = adminPage(<AdminEntrepreneurDetailPage userId={entrepreneurId} />);
+    if (entrepreneurId) page = adminPage(<AdminEntrepreneurDetailPage userId={entrepreneurId} />);
 
     const editQuestionMatch = path.match(/^\/admin\/questions\/([0-9a-f-]+)\/edit$/i);
     const editQuestionId = editQuestionMatch?.[1];
-    if (editQuestionId)
-      page = adminPage(<AdminQuestionFormPage questionId={editQuestionId} />);
+    if (editQuestionId) page = systemPage(<AdminQuestionFormPage questionId={editQuestionId} />);
   }
 
-  return (
-    <Suspense fallback={<div className="app-loading">Loading YERSPS…</div>}>{page}</Suspense>
-  );
+  return <Suspense fallback={<div className="app-loading">Loading YERSPS…</div>}>{page}</Suspense>;
 };

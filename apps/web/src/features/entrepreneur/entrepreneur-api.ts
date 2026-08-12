@@ -5,7 +5,7 @@ export interface SectorSummary {
   id: string;
   name: string;
 }
-export interface AssessmentQuestion {
+interface AssessmentQuestion {
   id: string;
   prompt: string;
   domain: { name: string };
@@ -15,7 +15,7 @@ export interface AssessmentPayload {
   questions: AssessmentQuestion[];
   responses: { questionId: string; answer: number }[];
 }
-export interface DomainScore {
+interface DomainScore {
   code: string;
   name: string;
   score: number;
@@ -48,10 +48,28 @@ export interface BusinessSummary {
   name: string;
   description: string;
   productOrService: string;
+  problemSolved: string | null;
+  targetCustomers: string | null;
   location: string | null;
   stage: string;
+  revenueModel: string | null;
+  estimatedStartupCapital: string | number | null;
+  availableCapital: string | number | null;
+  teamSize: number;
+  registrationStatus: string | null;
+  salesChannel: string | null;
+  mainRisks: string | null;
+  supportingDocumentName: string | null;
+  supportingDocumentUrl: string | null;
   createdAt: string;
-  sector: { name: string } | null;
+  sector: { id?: string; name: string } | null;
+  classifications: {
+    id: string;
+    confidence: number;
+    explanation: string;
+    status: 'SUGGESTED' | 'CONFIRMED' | 'DISPUTED' | 'ADMIN_CORRECTED';
+    correctionReason: string | null;
+  }[];
   assessmentSessions: {
     id: string;
     status: string;
@@ -72,6 +90,12 @@ export interface FeedbackItem {
   createdAt: string;
   admin: { fullName: string; expertProfile: { expertiseField: string } | null };
   business: { id: string; name: string } | null;
+  replies: {
+    id: string;
+    message: string;
+    createdAt: string;
+    author: { id: string; fullName: string; role: string };
+  }[];
 }
 export interface RecommendationItem {
   id: string;
@@ -109,6 +133,26 @@ export const entrepreneurApi = {
       '/entrepreneur/business',
       authorized(token, { method: 'POST', body: JSON.stringify(input) }),
     ),
+  updateBusiness: (token: string, businessId: string, input: BusinessProfileInput) =>
+    apiRequest<BusinessSummary>(
+      `/entrepreneur/business/${businessId}`,
+      authorized(token, { method: 'PATCH', body: JSON.stringify(input) }),
+    ),
+  archiveBusiness: (token: string, businessId: string) =>
+    apiRequest<void>(
+      `/entrepreneur/business/${businessId}`,
+      authorized(token, { method: 'DELETE' }),
+    ),
+  decideClassification: (
+    token: string,
+    businessId: string,
+    status: 'CONFIRMED' | 'DISPUTED',
+    reason?: string,
+  ) =>
+    apiRequest<unknown>(
+      `/entrepreneur/business/${businessId}/classification`,
+      authorized(token, { method: 'PATCH', body: JSON.stringify({ status, reason }) }),
+    ),
   businesses: (token: string) =>
     apiRequest<BusinessSummary[]>('/entrepreneur/businesses', authorized(token)),
   startAssessment: (token: string, businessId?: string) =>
@@ -120,8 +164,18 @@ export const entrepreneurApi = {
     apiRequest<AssessmentSummary[]>('/entrepreneur/assessments', authorized(token)),
   feedback: (token: string) =>
     apiRequest<FeedbackItem[]>('/entrepreneur/feedback', authorized(token)),
+  replyToFeedback: (token: string, feedbackId: string, message: string) =>
+    apiRequest<FeedbackItem['replies'][number]>(
+      `/entrepreneur/feedback/${feedbackId}/replies`,
+      authorized(token, { method: 'POST', body: JSON.stringify({ message }) }),
+    ),
   recommendations: (token: string) =>
     apiRequest<RecommendationItem[]>('/entrepreneur/recommendations', authorized(token)),
+  updateRecommendationStatus: (token: string, recommendationId: string, status: string) =>
+    apiRequest<RecommendationItem>(
+      `/entrepreneur/recommendations/${recommendationId}`,
+      authorized(token, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    ),
   saveResponses: (
     token: string,
     sessionId: string,

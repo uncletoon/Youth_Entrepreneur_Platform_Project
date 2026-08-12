@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate, useRouter } from '../routing/router';
 import { useAuth } from '../features/auth/AuthContext';
 import { Brand } from './Brand';
+import { NotificationCenter } from './NotificationCenter';
 
 const workspaceLinks: { to: string; label: string; Icon: LucideIcon }[] = [
   { to: '/app', label: 'Dashboard', Icon: Home },
@@ -25,7 +26,7 @@ const workspaceLinks: { to: string; label: string; Icon: LucideIcon }[] = [
 export const AppShell = ({ title, children }: { title?: string; children: ReactNode }) => {
   const navigate = useNavigate();
   const { path } = useRouter();
-  const { user, logout } = useAuth();
+  const { user, accessToken, logout } = useAuth();
 
   const isActive = (to: string) =>
     to === '/app' ? path === to : path === to || path.startsWith(`${to}/`);
@@ -35,7 +36,10 @@ export const AppShell = ({ title, children }: { title?: string; children: ReactN
       <header className="dashboard-header">
         <Brand />
         <div>
-          <span className="workspace-user-badge">{user?.fullName ?? user?.email ?? user?.phone}</span>
+          <NotificationCenter accessToken={accessToken} />
+          <span className="workspace-user-badge">
+            {user?.fullName ?? user?.email ?? user?.phone}
+          </span>
           <button
             type="button"
             onClick={async () => {

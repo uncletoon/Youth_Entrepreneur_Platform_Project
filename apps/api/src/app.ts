@@ -3,6 +3,8 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from './config/env.js';
 import { AuthError } from './modules/auth/auth.errors.js';
 import { authRouter } from './modules/auth/auth.routes.js';
@@ -11,6 +13,7 @@ import { systemRouter } from './modules/admin/system.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { entrepreneurRouter } from './modules/entrepreneur/entrepreneur.routes.js';
 import { expertRouter } from './modules/expert/expert.routes.js';
+import { notificationsRouter } from './modules/notifications/notifications.routes.js';
 
 export const createApp = () => {
   const app = express();
@@ -35,6 +38,20 @@ export const createApp = () => {
   app.use('/api/v1/system', systemRouter);
   app.use('/api/v1/entrepreneur', entrepreneurRouter);
   app.use('/api/v1/expert', expertRouter);
+  app.use('/api/v1/notifications', notificationsRouter);
+
+  if (isProduction) {
+    const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
+    const webDirectory = path.resolve(apiDirectory, '../../web/dist');
+    app.use(express.static(webDirectory));
+    app.get('/{*path}', (request, response, next) => {
+      if (request.path.startsWith('/api/')) {
+        next();
+        return;
+      }
+      response.sendFile(path.join(webDirectory, 'index.html'));
+    });
+  }
 
   app.use((_request, response) => {
     response.status(404).json({

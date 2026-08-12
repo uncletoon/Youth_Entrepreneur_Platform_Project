@@ -1,4 +1,5 @@
 import type {
+  AccountProfileInput,
   AuthPayload,
   AuthUser,
   LoginInput,
@@ -32,7 +33,7 @@ const publicUser = (user: {
   email: string | null;
   phone: string | null;
   role: UserRole;
-  status: 'ACTIVE' | 'DISABLED' | 'PENDING_VERIFICATION';
+  status: 'ACTIVE' | 'DISABLED';
   entrepreneurProfile: { completionPercent: number } | null;
   expertProfile: { approvalStatus: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' } | null;
 }): AuthUser => ({
@@ -106,6 +107,7 @@ export const authService = {
           phone,
           passwordHash,
           role: input.role,
+          status: 'ACTIVE',
           consentAt: new Date(),
           ...(input.role === 'ENTREPRENEUR'
             ? { entrepreneurProfile: { create: {} } }
@@ -158,7 +160,7 @@ export const authService = {
         401,
       );
     }
-    if (user.status !== 'ACTIVE')
+    if (user.status === 'DISABLED')
       throw new AuthError('ACCOUNT_DISABLED', 'This account is not active.', 403);
 
     const refreshToken = createRefreshToken();
@@ -201,7 +203,7 @@ export const authService = {
       !stored ||
       stored.revokedAt ||
       stored.expiresAt <= new Date() ||
-      stored.user.status !== 'ACTIVE'
+      stored.user.status === 'DISABLED'
     ) {
       throw new AuthError('INVALID_REFRESH_TOKEN', 'Your session has expired. Log in again.', 401);
     }
@@ -252,8 +254,30 @@ export const authService = {
 
   async getCurrentUser(userId: string) {
     const user = await authRepository.findById(userId);
-    if (!user || user.status !== 'ACTIVE')
+    if (!user || user.status === 'DISABLED')
       throw new AuthError('ACCOUNT_NOT_FOUND', 'The account is unavailable.', 404);
+    return publicUser(user);
+  },
+
+  async updateAccountProfile(userId: string, input: AccountProfileInput, context: SessionContext) {
+    const user = await prisma.$transaction(async (transaction) => {
+      const updated = await transaction.user.update({
+        where: { id: userId },
+        data: { fullName: input.fullName },
+        include: { entrepreneurProfile: true, expertProfile: true },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorId: userId,
+          action: 'ACCOUNT_PROFILE_UPDATED',
+          entityType: 'User',
+          entityId: userId,
+          newValues: { fullName: updated.fullName },
+          ipAddress: context.ipAddress,
+        },
+      });
+      return updated;
+    });
     return publicUser(user);
   },
 
@@ -281,7 +305,7 @@ export const authService = {
         },
       }),
     ]);
-    return token;
+    return { token, user: { fullName: user.fullName, email: user.email, phone: user.phone } };
   },
 
   async resetPassword(input: PasswordResetInput, context: SessionContext) {
@@ -314,49 +338,55 @@ export const authService = {
     ]);
   },
 
-  async requestContactVerification(userId: string) {
-    const user = await authRepository.findById(userId);
-    if (!user) throw new AuthError('ACCOUNT_NOT_FOUND', 'The account is unavailable.', 404);
-    if (user.contactVerifiedAt) return null;
-    const token = createActionToken();
-    await prisma.$transaction([
-      prisma.verificationToken.updateMany({
-        where: { userId, usedAt: null },
-        data: { usedAt: new Date() },
-      }),
-      prisma.verificationToken.create({
-        data: {
-          userId,
-          tokenHash: hashToken(token),
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  async exportAccount(userId: string) {
+    const account = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        role: true,
+        status: true,
+        consentAt: true,
+        createdAt: true,
+        updatedAt: true,
+        entrepreneurProfile: true,
+        expertProfile: true,
+        businesses: {
+          include: {
+            sector: true,
+            classifications: true,
+            assessmentSessions: { include: { responses: true, result: true } },
+          },
         },
-      }),
-    ]);
-    return token;
+        recommendations: true,
+        adminFeedbackReceived: { include: { replies: true } },
+        notifications: true,
+        auditLogs: true,
+      },
+    });
+    if (!account) throw new AuthError('ACCOUNT_NOT_FOUND', 'The account is unavailable.', 404);
+    return account;
   },
 
-  async verifyContact(token: string) {
-    const stored = await prisma.verificationToken.findUnique({
-      where: { tokenHash: hashToken(token) },
-    });
-    if (!stored || stored.usedAt || stored.expiresAt <= new Date())
-      throw new AuthError(
-        'INVALID_VERIFICATION_TOKEN',
-        'This verification link is invalid or expired.',
-        400,
-      );
+  async deactivateAccount(userId: string, password: string) {
+    const user = await authRepository.findById(userId);
+    if (!user || !(await argon2.verify(user.passwordHash, password)))
+      throw new AuthError('INVALID_CREDENTIALS', 'The password is incorrect.', 401);
     await prisma.$transaction([
-      prisma.user.update({
-        where: { id: stored.userId },
-        data: { contactVerifiedAt: new Date() },
+      prisma.user.update({ where: { id: userId }, data: { status: 'DISABLED' } }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
       }),
-      prisma.verificationToken.update({ where: { id: stored.id }, data: { usedAt: new Date() } }),
       prisma.auditLog.create({
         data: {
-          actorId: stored.userId,
-          action: 'AUTH_CONTACT_VERIFIED',
+          actorId: userId,
+          action: 'ACCOUNT_SELF_DEACTIVATED',
           entityType: 'User',
-          entityId: stored.userId,
+          entityId: userId,
+          reason: 'Account deactivated by its owner.',
         },
       }),
     ]);

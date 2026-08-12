@@ -13,6 +13,9 @@
     "db:migrate": "prisma migrate dev --config=prisma.config.ts",
     "db:migrate:deploy": "prisma migrate deploy --config=prisma.config.ts",
     "db:seed": "prisma db seed --config=prisma.config.ts",
+    "db:seed:production": "tsx --env-file=../../.env.production prisma/seed.ts",
+    "admin:bootstrap": "tsx --env-file-if-exists=../../.env prisma/bootstrap-system-admin.ts",
+    "admin:bootstrap:production": "tsx --env-file=../../.env.production prisma/bootstrap-system-admin.ts",
     "db:studio": "prisma studio --config=prisma.config.ts"
   },
   "dependencies": {
@@ -27,7 +30,7 @@
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.3.0",
     "jose": "^6.2.8",
-    "pg": "^8.22.0",
+    "nodemailer": "^9.0.5",
     "pino-http": "^11.0.0",
     "zod": "^4.4.3"
   },
@@ -36,10 +39,8 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.2",
-    "@types/pg": "^8.20.3",
-    "@types/supertest": "^7.2.1",
+    "@types/nodemailer": "^8.0.1",
     "prisma": "^7.9.1",
-    "supertest": "^7.2.2",
     "tsx": "^4.23.5"
   }
 }

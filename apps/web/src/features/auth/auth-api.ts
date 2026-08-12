@@ -38,6 +38,42 @@ export const apiRequest = async <T>(path: string, init: RequestInit = {}): Promi
   return result.data;
 };
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export const apiRequestWithMeta = async <T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ data: T; meta: PaginationMeta }> => {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...init.headers },
+  });
+  const result = (await response.json()) as ApiResponse<T> & { meta?: PaginationMeta };
+  if (!response.ok || !result.success) {
+    const error = result.success ? undefined : result.error;
+    throw new ApiRequestError(
+      error?.message ?? 'The request failed.',
+      error?.code ?? 'REQUEST_FAILED',
+      response.status,
+    );
+  }
+  return {
+    data: result.data,
+    meta: result.meta ?? {
+      page: 1,
+      limit: result.data instanceof Array ? result.data.length : 1,
+      total: 0,
+      totalPages: 1,
+    },
+  };
+};
+
 export const authApi = {
   register(input: RegisterInput) {
     return apiRequest<AuthPayload>('/auth/register', {
@@ -59,6 +95,13 @@ export const authApi = {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   },
+  updateProfile(accessToken: string, fullName: string) {
+    return apiRequest<AuthUser>('/auth/account/profile', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ fullName }),
+    });
+  },
   requestPasswordReset(identifier: string) {
     return apiRequest<{ message: string; developmentToken?: string }>(
       '/auth/password-reset/request',
@@ -74,19 +117,24 @@ export const authApi = {
       body: JSON.stringify({ token, password }),
     });
   },
-  requestVerification(accessToken: string) {
-    return apiRequest<{ message: string; developmentToken?: string }>(
-      '/auth/verification/request',
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
+  async exportAccount(accessToken: string) {
+    const response = await fetch(`${API_URL}/auth/account/export`, {
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) throw new Error('Could not export your account data.');
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'yersps-account-data.json';
+    link.click();
+    URL.revokeObjectURL(url);
   },
-  verifyContact(token: string) {
-    return apiRequest<{ message: string }>('/auth/verification/complete', {
+  deactivateAccount(accessToken: string, password: string) {
+    return apiRequest<void>('/auth/account/deactivate', {
       method: 'POST',
-      body: JSON.stringify({ token }),
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ password }),
     });
   },
 };

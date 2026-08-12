@@ -3,7 +3,6 @@ import {
   BarChart3,
   Building2,
   CheckCircle2,
-  ChevronDown,
   ClipboardList,
   Download,
   Edit3,
@@ -16,11 +15,13 @@ import {
   ShieldCheck,
   Trash2,
   Users,
+  UserRound,
   XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, Redirect, useNavigate } from '../routing/router';
 import { Brand } from '../components/Brand';
+import { NotificationCenter } from '../components/NotificationCenter';
 import { useAuth } from '../features/auth/AuthContext';
 import {
   adminApi,
@@ -31,36 +32,65 @@ import {
   type DomainRow,
   type EntrepreneurRow,
   type ExpertApplicationRow,
+  type ExpertAssignmentData,
   type QuestionRow,
   type SectorRow,
   type SystemUserRow,
 } from '../features/admin/admin-api';
+import type { PaginationMeta } from '../features/auth/auth-api';
 
 export type AdminSection =
   | 'overview'
   | 'entrepreneurs'
   | 'reviews'
   | 'questions'
+  | 'profile'
   | 'configuration'
   | 'applications'
+  | 'assignments'
   | 'users'
   | 'audits';
 
 type ConfigurationEditor =
-  | { kind: 'domain'; item: DomainRow }
-  | { kind: 'sector'; item: SectorRow }
-  | null;
+  { kind: 'domain'; item: DomainRow } | { kind: 'sector'; item: SectorRow } | null;
 
-const NAV_ITEMS: { section: AdminSection; to: string; label: string; Icon: typeof LayoutDashboard }[] = [
+type PagedSection = 'entrepreneurs' | 'reviews' | 'users' | 'applications' | 'audits';
+
+const initialPages: Record<PagedSection, number> = {
+  entrepreneurs: 1,
+  reviews: 1,
+  users: 1,
+  applications: 1,
+  audits: 1,
+};
+
+const NAV_ITEMS: {
+  section: AdminSection;
+  to: string;
+  label: string;
+  Icon: typeof LayoutDashboard;
+}[] = [
   { section: 'overview', to: '/admin', label: 'Overview', Icon: LayoutDashboard },
   { section: 'entrepreneurs', to: '/admin/entrepreneurs', label: 'Entrepreneurs', Icon: Users },
   { section: 'reviews', to: '/admin/reviews', label: 'Assessment Reviews', Icon: ClipboardList },
   { section: 'questions', to: '/admin/questions', label: 'Question Bank', Icon: FileText },
-  { section: 'configuration', to: '/admin/configuration', label: 'Configuration', Icon: Settings },
+  { section: 'profile', to: '/admin/profile', label: 'Profile', Icon: UserRound },
 ];
 
-const SYSTEM_NAV_ITEMS: { section: AdminSection; to: string; label: string; Icon: typeof LayoutDashboard }[] = [
-  { section: 'applications', to: '/admin/applications', label: 'Expert Applications', Icon: ShieldCheck },
+const SYSTEM_NAV_ITEMS: {
+  section: AdminSection;
+  to: string;
+  label: string;
+  Icon: typeof LayoutDashboard;
+}[] = [
+  { section: 'configuration', to: '/admin/configuration', label: 'Configuration', Icon: Settings },
+  {
+    section: 'applications',
+    to: '/admin/applications',
+    label: 'Expert Applications',
+    Icon: ShieldCheck,
+  },
+  { section: 'assignments', to: '/admin/assignments', label: 'Expert Assignments', Icon: Users },
   { section: 'users', to: '/admin/users', label: 'Users & Roles', Icon: Users },
   { section: 'audits', to: '/admin/audits', label: 'Audit Logs', Icon: ClipboardList },
 ];
@@ -78,43 +108,70 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
   const [questionSearch, setQuestionSearch] = useState('');
   const [questionDomain, setQuestionDomain] = useState('ALL');
   const [questionPendingDelete, setQuestionPendingDelete] = useState<QuestionRow | null>(null);
-  const [configuration, setConfiguration] = useState<AdminConfiguration>({ sectors: [], domains: [] });
+  const [configuration, setConfiguration] = useState<AdminConfiguration>({
+    sectors: [],
+    domains: [],
+  });
   const [users, setUsers] = useState<SystemUserRow[]>([]);
   const [audits, setAudits] = useState<AuditRow[]>([]);
   const [applications, setApplications] = useState<ExpertApplicationRow[]>([]);
+  const [assignmentData, setAssignmentData] = useState<ExpertAssignmentData>({
+    assignments: [],
+    experts: [],
+    entrepreneurs: [],
+  });
+  const [assignmentExpertId, setAssignmentExpertId] = useState('');
+  const [assignmentEntrepreneurId, setAssignmentEntrepreneurId] = useState('');
   const [selectedApplication, setSelectedApplication] = useState<string>('');
   const [reviewNote, setReviewNote] = useState('');
   const [configurationEditor, setConfigurationEditor] = useState<ConfigurationEditor>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pageBySection, setPageBySection] = useState(initialPages);
+  const [paginationBySection, setPaginationBySection] = useState<
+    Partial<Record<PagedSection, PaginationMeta>>
+  >({});
 
   const load = async () => {
     if (!accessToken) return;
     setError('');
     setLoading(true);
     try {
-      const [summary, people, queue, bank, config] = await Promise.all([
+      const [summary, peoplePage, queuePage, bank, config] = await Promise.all([
         adminApi.overview(accessToken),
-        adminApi.entrepreneurs(accessToken),
-        adminApi.assessments(accessToken),
+        adminApi.entrepreneurs(accessToken, pageBySection.entrepreneurs),
+        adminApi.assessments(accessToken, pageBySection.reviews),
         adminApi.questions(accessToken),
         adminApi.configuration(accessToken),
       ]);
       setOverview(summary);
-      setEntrepreneurs(people);
-      setAssessments(queue);
+      setEntrepreneurs(peoplePage.data);
+      setAssessments(queuePage.data);
       setQuestions(bank);
       setConfiguration(config);
+      setPaginationBySection((current) => ({
+        ...current,
+        entrepreneurs: peoplePage.meta,
+        reviews: queuePage.meta,
+      }));
       if (isSystem) {
-        const [allUsers, auditRows, expertRows] = await Promise.all([
-          adminApi.users(accessToken),
-          adminApi.audits(accessToken),
-          adminApi.expertApplications(accessToken),
+        const [userPage, auditPage, applicationPage, assignments] = await Promise.all([
+          adminApi.users(accessToken, pageBySection.users),
+          adminApi.audits(accessToken, pageBySection.audits),
+          adminApi.expertApplications(accessToken, pageBySection.applications),
+          adminApi.expertAssignments(accessToken),
         ]);
-        setUsers(allUsers);
-        setAudits(auditRows);
-        setApplications(expertRows);
+        setUsers(userPage.data);
+        setAudits(auditPage.data);
+        setApplications(applicationPage.data);
+        setPaginationBySection((current) => ({
+          ...current,
+          users: userPage.meta,
+          audits: auditPage.meta,
+          applications: applicationPage.meta,
+        }));
+        setAssignmentData(assignments);
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not load administration data.');
@@ -125,7 +182,19 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
 
   useEffect(() => {
     if (isSystem || user?.expertApprovalStatus === 'APPROVED') void load();
-  }, [accessToken, isSystem, user?.expertApprovalStatus]);
+  }, [accessToken, isSystem, pageBySection, user?.expertApprovalStatus]);
+
+  useEffect(() => {
+    if (!error && !notice) return;
+    const timeout = window.setTimeout(
+      () => {
+        setError('');
+        setNotice('');
+      },
+      error ? 7000 : 5000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [error, notice]);
 
   if (!isSystem && user?.expertApprovalStatus !== 'APPROVED')
     return <Redirect to="/expert/profile" />;
@@ -140,6 +209,30 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The operation failed.');
     }
+  };
+
+  const moveToPage = (sectionName: PagedSection, page: number) => {
+    setPageBySection((current) => ({ ...current, [sectionName]: page }));
+  };
+
+  const reviewExpert = (profileId: string, status: 'APPROVED' | 'REJECTED') => {
+    const note = reviewNote.trim();
+    if (note.length < 5) {
+      setNotice('');
+      setError(
+        `Enter a decision note of at least 5 characters before ${
+          status === 'APPROVED' ? 'approving' : 'rejecting'
+        } this expert.`,
+      );
+      return;
+    }
+
+    void run(
+      () => adminApi.reviewExpert(accessToken as string, profileId, status, note),
+      status === 'APPROVED'
+        ? 'Expert application approved successfully.'
+        : 'Expert application rejected successfully.',
+    );
   };
 
   const filteredQuestions = questions.filter((question) => {
@@ -163,9 +256,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
       <header className="dashboard-header admin-dashboard-header">
         <Brand />
         <div className="admin-header-right">
+          <NotificationCenter accessToken={accessToken} />
           <div className="admin-header-badge">
             <ShieldCheck />
-            <span>{isSystem ? 'System Administrator' : 'Expert Administrator'}</span>
+            <span>{isSystem ? 'System Administrator' : 'Approved Expert'}</span>
           </div>
           <button
             className="admin-header-btn"
@@ -198,11 +292,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
           </div>
           <nav className="admin-nav__links">
             {NAV_ITEMS.map(({ section: sec, to, label, Icon }) => (
-              <Link
-                key={sec}
-                to={to}
-                className={`admin-nav__link ${tab === sec ? 'active' : ''}`}
-              >
+              <Link key={sec} to={to} className={`admin-nav__link ${tab === sec ? 'active' : ''}`}>
                 <Icon />
                 <span>{label}</span>
               </Link>
@@ -220,11 +310,12 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   >
                     <Icon />
                     <span>{label}</span>
-                    {sec === 'applications' && applications.filter((a) => a.approvalStatus === 'PENDING').length > 0 && (
-                      <span className="admin-nav__badge">
-                        {applications.filter((a) => a.approvalStatus === 'PENDING').length}
-                      </span>
-                    )}
+                    {sec === 'applications' &&
+                      applications.filter((a) => a.approvalStatus === 'PENDING').length > 0 && (
+                        <span className="admin-nav__badge">
+                          {applications.filter((a) => a.approvalStatus === 'PENDING').length}
+                        </span>
+                      )}
                   </Link>
                 ))}
               </nav>
@@ -234,20 +325,47 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
 
         {/* Main Content */}
         <section className="admin-main">
-          {error ? (
-            <div className="admin-alert admin-alert--error">
-              <AlertCircle />
-              <span>{error}</span>
-              <button type="button" onClick={() => setError('')}><XCircle /></button>
-            </div>
-          ) : null}
-          {notice ? (
-            <div className="admin-alert admin-alert--success">
-              <CheckCircle2 />
-              <span>{notice}</span>
-              <button type="button" onClick={() => setNotice('')}><XCircle /></button>
-            </div>
-          ) : null}
+          <div className="admin-notification-stack" aria-live="polite" aria-atomic="true">
+            {error ? (
+              <div className="admin-notification-card admin-notification-card--error" role="alert">
+                <span className="admin-notification-card__icon" aria-hidden="true">
+                  <AlertCircle />
+                </span>
+                <div className="admin-notification-card__content">
+                  <strong>Action needed</strong>
+                  <span>{error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setError('')}
+                  aria-label="Dismiss notification"
+                >
+                  <XCircle />
+                </button>
+              </div>
+            ) : null}
+            {notice ? (
+              <div
+                className="admin-notification-card admin-notification-card--success"
+                role="status"
+              >
+                <span className="admin-notification-card__icon" aria-hidden="true">
+                  <CheckCircle2 />
+                </span>
+                <div className="admin-notification-card__content">
+                  <strong>Completed</strong>
+                  <span>{notice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNotice('')}
+                  aria-label="Dismiss notification"
+                >
+                  <XCircle />
+                </button>
+              </div>
+            ) : null}
+          </div>
 
           {/* ── OVERVIEW ── */}
           {tab === 'overview' ? (
@@ -297,8 +415,8 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                 <section className="admin-panel">
                   <h2>Review activity</h2>
                   <p>
-                    <strong>{overview?.reviewed ?? 0}</strong> assessments have been reviewed.
-                    Use the review queue to inspect submitted results and update their status.
+                    <strong>{overview?.reviewed ?? 0}</strong> assessments have been reviewed. Use
+                    the review queue to inspect submitted results and update their status.
                   </p>
                   <Link to="/admin/reviews" className="admin-panel-link">
                     Open review queue →
@@ -311,8 +429,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                       <div key={domain.id} className="domain-health-item">
                         <div className="domain-health-info">
                           <strong>{domain.name}</strong>
-                          <span className={domain.activeCount >= 5 ? 'count-good' : 'count-warning'}>
-                            {domain.activeCount} active questions{domain.activeCount < 5 ? ' ⚠' : ''}
+                          <span
+                            className={domain.activeCount >= 5 ? 'count-good' : 'count-warning'}
+                          >
+                            {domain.activeCount} active questions
                           </span>
                         </div>
                         <div className="domain-health-bar">
@@ -415,6 +535,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                meta={paginationBySection.entrepreneurs}
+                onPageChange={(page) => moveToPage('entrepreneurs', page)}
+              />
             </>
           ) : null}
 
@@ -447,10 +571,19 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                       assessments.map((item) => (
                         <tr key={item.id}>
                           <td>
-                            <Link to={`/admin/entrepreneurs/${item.user.id}`} style={{ fontWeight: 600, color: 'var(--brand)', textDecoration: 'none' }}>
+                            <Link
+                              to={`/admin/entrepreneurs/${item.user.id}`}
+                              style={{
+                                fontWeight: 600,
+                                color: 'var(--brand)',
+                                textDecoration: 'none',
+                              }}
+                            >
                               {item.user.fullName}
                             </Link>
-                            <small style={{ display: 'block' }}>{item.user.email ?? item.user.phone}</small>
+                            <small style={{ display: 'block' }}>
+                              {item.user.email ?? item.user.phone}
+                            </small>
                           </td>
                           <td>
                             {item.business.name}
@@ -467,7 +600,9 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                             )}
                           </td>
                           <td>
-                            <span className={`status-pill status-pill--${item.status.toLowerCase()}`}>
+                            <span
+                              className={`status-pill status-pill--${item.status.toLowerCase()}`}
+                            >
                               {item.status.replaceAll('_', ' ')}
                             </span>
                           </td>
@@ -501,6 +636,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                meta={paginationBySection.reviews}
+                onPageChange={(page) => moveToPage('reviews', page)}
+              />
             </>
           ) : null}
 
@@ -512,8 +651,8 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   <span className="eyebrow">Assessment content</span>
                   <h1>Question bank</h1>
                   <p>
-                    Browse, filter, edit, archive, or delete assessment questions. Every domain
-                    must maintain at least five active core questions.
+                    Browse, filter, edit, archive, or delete assessment questions. Every domain must
+                    maintain at least five active core questions.
                   </p>
                 </div>
                 <Link className="primary-action admin-export-btn" to="/admin/questions/new">
@@ -609,16 +748,25 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                             </span>
                           </td>
                           <td className="table-actions">
-                            <Link to={`/admin/questions/${question.id}/edit`} className="table-action-icon">
-                              <Edit3 /> Edit
-                            </Link>
-                            <button
-                              type="button"
-                              className="table-action-icon danger-action"
-                              onClick={() => setQuestionPendingDelete(question)}
-                            >
-                              <Trash2 /> Delete
-                            </button>
+                            {isSystem ? (
+                              <>
+                                <Link
+                                  to={`/admin/questions/${question.id}/edit`}
+                                  className="table-action-icon"
+                                >
+                                  <Edit3 /> Edit
+                                </Link>
+                                <button
+                                  type="button"
+                                  className="table-action-icon danger-action"
+                                  onClick={() => setQuestionPendingDelete(question)}
+                                >
+                                  <Trash2 /> Delete
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-muted">System managed</span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -641,12 +789,11 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                     </span>
                     <h2 id="delete-question-title">Remove this question?</h2>
                     <p>
-                      <strong>{questionPendingDelete.code}</strong>:{' '}
-                      {questionPendingDelete.prompt}
+                      <strong>{questionPendingDelete.code}</strong>: {questionPendingDelete.prompt}
                     </p>
                     <p className="modal-note">
-                      If this question has historical responses, YERSPS will archive it instead
-                      of permanently deleting those records.
+                      If this question has historical responses, YERSPS will archive it instead of
+                      permanently deleting those records.
                     </p>
                     <div className="modal-actions">
                       <button type="button" onClick={() => setQuestionPendingDelete(null)}>
@@ -721,7 +868,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                               }
                             >
                               {domain._count.questions} questions
-                              {domain._count.questions < 5 && ' ⚠ Minimum not met'}
+                              {domain._count.questions < 5 && ' Minimum not met'}
                             </span>
                           </td>
                           <td>{domain.description}</td>
@@ -855,9 +1002,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   >
                     <div className="modal-header">
                       <div>
-                        <span className="eyebrow">
-                          Modify {configurationEditor.kind}
-                        </span>
+                        <span className="eyebrow">Modify {configurationEditor.kind}</span>
                         <h2>{configurationEditor.item.name}</h2>
                       </div>
                       <button
@@ -871,11 +1016,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                     <div className="modal-form-grid">
                       <label>
                         Name
-                        <input
-                          name="name"
-                          defaultValue={configurationEditor.item.name}
-                          required
-                        />
+                        <input name="name" defaultValue={configurationEditor.item.name} required />
                       </label>
                       {configurationEditor.kind === 'domain' ? (
                         <>
@@ -947,6 +1088,128 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
           ) : null}
 
           {/* ── USERS ── */}
+          {tab === 'assignments' && isSystem ? (
+            <>
+              <Heading
+                title="Expert assignments"
+                subtitle="Experts can only open entrepreneur records that are assigned here."
+              />
+              <form
+                className="admin-panel assignment-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!assignmentExpertId || !assignmentEntrepreneurId) {
+                    setError('Choose both an approved Expert and an entrepreneur.');
+                    return;
+                  }
+                  void run(
+                    () =>
+                      adminApi.createExpertAssignment(
+                        accessToken as string,
+                        assignmentExpertId,
+                        assignmentEntrepreneurId,
+                      ),
+                    'Entrepreneur assigned to the Expert.',
+                  );
+                }}
+              >
+                <div>
+                  <span className="eyebrow">Create assignment</span>
+                  <h2>Connect an Expert with an entrepreneur</h2>
+                  <p>The Expert will receive a notification and gain access only to this record.</p>
+                </div>
+                <label>
+                  Approved Expert
+                  <select
+                    value={assignmentExpertId}
+                    onChange={(event) => setAssignmentExpertId(event.target.value)}
+                    required
+                  >
+                    <option value="">Choose an Expert</option>
+                    {assignmentData.experts.map((expert) => (
+                      <option key={expert.id} value={expert.id}>
+                        {expert.fullName} {expert.email ? `(${expert.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Entrepreneur
+                  <select
+                    value={assignmentEntrepreneurId}
+                    onChange={(event) => setAssignmentEntrepreneurId(event.target.value)}
+                    required
+                  >
+                    <option value="">Choose an entrepreneur</option>
+                    {assignmentData.entrepreneurs.map((entrepreneur) => (
+                      <option key={entrepreneur.id} value={entrepreneur.id}>
+                        {entrepreneur.fullName}{' '}
+                        {entrepreneur.email ? `(${entrepreneur.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className="primary-action">
+                  Assign entrepreneur
+                </button>
+              </form>
+              <div className="admin-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Expert</th>
+                      <th>Entrepreneur</th>
+                      <th>Assigned by</th>
+                      <th>Date</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignmentData.assignments.map((assignment) => (
+                      <tr key={assignment.id}>
+                        <td>
+                          <strong>{assignment.expert.fullName}</strong>
+                          <small>{assignment.expert.expertProfile?.expertiseField}</small>
+                        </td>
+                        <td>
+                          <strong>{assignment.entrepreneur.fullName}</strong>
+                          <small>
+                            {assignment.entrepreneur.email ?? assignment.entrepreneur.phone}
+                          </small>
+                        </td>
+                        <td>{assignment.assignedBy?.fullName ?? 'System Administrator'}</td>
+                        <td>{new Date(assignment.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() =>
+                              void run(
+                                () =>
+                                  adminApi.removeExpertAssignment(
+                                    accessToken as string,
+                                    assignment.id,
+                                  ),
+                                'Expert assignment removed.',
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!assignmentData.assignments.length ? (
+                      <tr>
+                        <td colSpan={5}>No active Expert assignments.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+
           {tab === 'users' && isSystem ? (
             <>
               <Heading
@@ -960,7 +1223,6 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                       <th>User</th>
                       <th>Role</th>
                       <th>Status</th>
-                      <th>Verified</th>
                       <th>Joined</th>
                       <th>Actions</th>
                     </tr>
@@ -988,7 +1250,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                             }
                           >
                             <option value="ENTREPRENEUR">Entrepreneur</option>
-                            <option value="ADMIN">Administrator</option>
+                            <option value="EXPERT">Expert</option>
                             <option value="SYSTEM_ADMIN">System administrator</option>
                           </select>
                         </td>
@@ -999,7 +1261,6 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                             {item.status.replaceAll('_', ' ')}
                           </span>
                         </td>
-                        <td>{item.contactVerifiedAt ? '✓ Yes' : '✗ No'}</td>
                         <td>{new Date(item.createdAt).toLocaleDateString()}</td>
                         <td>
                           <button
@@ -1009,10 +1270,8 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                               void run(
                                 () =>
                                   adminApi.updateUser(accessToken as string, item.id, {
-                                    status:
-                                      item.status === 'DISABLED' ? 'ACTIVE' : 'DISABLED',
-                                    reason:
-                                      'Account status updated through system administration.',
+                                    status: item.status === 'DISABLED' ? 'ACTIVE' : 'DISABLED',
+                                    reason: 'Account status updated through system administration.',
                                   }),
                                 'User status updated.',
                               )
@@ -1026,6 +1285,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                meta={paginationBySection.users}
+                onPageChange={(page) => moveToPage('users', page)}
+              />
             </>
           ) : null}
 
@@ -1038,19 +1301,19 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
               />
               <div className="admin-stat-grid expert-review-stats">
                 <StatCard
-                  label="Awaiting review"
+                  label="Awaiting on page"
                   value={applications.filter((a) => a.approvalStatus === 'PENDING').length}
                   Icon={ClipboardList}
                   color="amber"
                 />
                 <StatCard
-                  label="Approved experts"
+                  label="Approved on page"
                   value={applications.filter((a) => a.approvalStatus === 'APPROVED').length}
                   Icon={CheckCircle2}
                   color="green"
                 />
                 <StatCard
-                  label="Rejected"
+                  label="Rejected on page"
                   value={applications.filter((a) => a.approvalStatus === 'REJECTED').length}
                   Icon={XCircle}
                   color="red"
@@ -1111,6 +1374,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                meta={paginationBySection.applications}
+                onPageChange={(page) => moveToPage('applications', page)}
+              />
 
               {selectedApplication
                 ? (() => {
@@ -1179,48 +1446,34 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                           ) : null}
                         </div>
                         <label className="review-note-field">
-                          Decision note
+                          <span>
+                            Decision note <strong aria-hidden="true">*</strong>
+                          </span>
                           <textarea
                             value={reviewNote}
                             onChange={(event) => setReviewNote(event.target.value)}
                             minLength={5}
+                            maxLength={1000}
+                            required
+                            aria-describedby="expert-review-note-hint"
                             placeholder="Record why this application is approved or rejected."
                           />
+                          <small id="expert-review-note-hint">
+                            Required for the audit record. Enter at least 5 characters.
+                          </small>
                         </label>
                         <div className="expert-review-actions">
                           <button
                             type="button"
                             className="danger-button"
-                            onClick={() =>
-                              void run(
-                                () =>
-                                  adminApi.reviewExpert(
-                                    accessToken as string,
-                                    application.id,
-                                    'REJECTED',
-                                    reviewNote,
-                                  ),
-                                'Expert application rejected.',
-                              )
-                            }
+                            onClick={() => reviewExpert(application.id, 'REJECTED')}
                           >
                             Reject application
                           </button>
                           <button
                             className="primary-action"
                             type="button"
-                            onClick={() =>
-                              void run(
-                                () =>
-                                  adminApi.reviewExpert(
-                                    accessToken as string,
-                                    application.id,
-                                    'APPROVED',
-                                    reviewNote,
-                                  ),
-                                'Expert application approved.',
-                              )
-                            }
+                            onClick={() => reviewExpert(application.id, 'APPROVED')}
                           >
                             Approve expert
                           </button>
@@ -1273,6 +1526,10 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   </tbody>
                 </table>
               </div>
+              <PaginationControls
+                meta={paginationBySection.audits}
+                onPageChange={(page) => moveToPage('audits', page)}
+              />
             </>
           ) : null}
         </section>
@@ -1314,3 +1571,43 @@ const Heading = ({ title, subtitle }: { title: string; subtitle: string }) => (
     </div>
   </div>
 );
+
+const PaginationControls = ({
+  meta,
+  onPageChange,
+}: {
+  meta?: PaginationMeta;
+  onPageChange: (page: number) => void;
+}) => {
+  if (!meta || meta.totalPages <= 1) return null;
+  const firstItem = (meta.page - 1) * meta.limit + 1;
+  const lastItem = Math.min(meta.page * meta.limit, meta.total);
+  return (
+    <nav className="table-pagination" aria-label="Table pages">
+      <p>
+        Showing {firstItem}–{lastItem} of {meta.total}
+      </p>
+      <div>
+        <button
+          type="button"
+          className="modify-btn"
+          disabled={meta.page <= 1}
+          onClick={() => onPageChange(meta.page - 1)}
+        >
+          Previous
+        </button>
+        <span aria-current="page">
+          Page {meta.page} of {meta.totalPages}
+        </span>
+        <button
+          type="button"
+          className="modify-btn"
+          disabled={meta.page >= meta.totalPages}
+          onClick={() => onPageChange(meta.page + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </nav>
+  );
+};

@@ -39,8 +39,8 @@ export const AuthPage = ({ mode }: { mode: 'login' | 'register' }) => {
     setSubmitting(true);
     try {
       if (isRegister) {
-        const user = await auth.register(registerSchema.parse(input));
-        navigate(user.role === 'ADMIN' ? '/expert/profile' : '/app', { replace: true });
+        await auth.register(registerSchema.parse(input));
+        navigate('/app', { replace: true });
       } else {
         await auth.login(loginSchema.parse(input));
         navigate('/app', { replace: true });
@@ -110,10 +110,10 @@ export const AuthPage = ({ mode }: { mode: 'login' | 'register' }) => {
                     </span>
                   </label>
                   <label>
-                    <input type="radio" name="role" value="ADMIN" />
+                    <input type="radio" name="role" value="EXPERT" />
                     <span>
                       <BriefcaseBusiness />
-                      <strong>Admin</strong>
+                      <strong>Expert</strong>
                       <small>Apply to review entrepreneurs and provide guidance.</small>
                     </span>
                   </label>

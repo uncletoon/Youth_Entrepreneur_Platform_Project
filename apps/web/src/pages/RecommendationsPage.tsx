@@ -61,7 +61,27 @@ export const RecommendationsPage = () => {
               </div>
             ) : null}
             <footer>
-              <span className="status-pill">{item.status.replaceAll('_', ' ')}</span>
+              <label className="recommendation-status-control">
+                <span className="sr-only">Update status for {item.title}</span>
+                <select
+                  value={item.status}
+                  onChange={async (event) => {
+                    const updated = await entrepreneurApi.updateRecommendationStatus(
+                      accessToken as string,
+                      item.id,
+                      event.target.value,
+                    );
+                    setItems((current) =>
+                      current.map((entry) => (entry.id === item.id ? updated : entry)),
+                    );
+                  }}
+                >
+                  <option value="NEW">New</option>
+                  <option value="IN_PROGRESS">In progress</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="DISMISSED">Dismissed</option>
+                </select>
+              </label>
               <time>{new Date(item.createdAt).toLocaleDateString()}</time>
             </footer>
           </article>

@@ -1,15 +1,16 @@
 # YERSPS
 
-Youth Entrepreneur Readiness and Success Prediction System (YERSPS) is an explainable platform for
-helping aspiring and early-stage entrepreneurs understand readiness gaps, follow a relevant
-assessment path, and turn results into practical actions.
+Youth Entrepreneur Readiness and Success Prediction System (YERSPS) is an explainable readiness-risk
+platform. It helps aspiring and early-stage entrepreneurs understand preparation gaps, follow a
+relevant assessment path, and turn results into practical actions. Its current output is a
+rule-based readiness estimate, not a machine-learning prediction or a guarantee of success.
 
 ## Workspace
 
 - `apps/web` - React, Vite, TypeScript, Tailwind CSS
 - `apps/api` - Express 5 and TypeScript
 - `packages/contracts` - shared Zod schemas and API types
-- `docs` - architecture and phased delivery plan
+- `docs` - runtime and security architecture
 
 ## Where to run commands
 
@@ -19,7 +20,7 @@ Run every project command from the repository root:
 D:\Toon\My Doc\Classmate\Paccy\YERSPS_Project
 ```
 
-Do not run installation, Docker, database, or combined development commands from `apps/web` or
+Do not run installation, database, or combined development commands from `apps/web` or
 `apps/api`. npm workspaces route each root command to the correct application.
 
 ## Local development
@@ -29,8 +30,10 @@ From the repository root:
 ```powershell
 Copy-Item .env.example .env
 npm install
+npm run db:local:start
 npm run db:migrate
 npm run db:seed
+npm run admin:bootstrap
 npm run dev
 ```
 
@@ -39,20 +42,90 @@ it from the root, and Vite is configured to use the root as its environment dire
 
 The website runs at `http://localhost:5173`; the API health endpoint is
 `http://localhost:4000/api/v1/health`.
+Database readiness is available at `http://localhost:4000/api/v1/health/ready`.
 
 PostgreSQL is required for authentication, profiles, businesses, assessments, administration, and
-audit data. Start it from the repository root with `docker compose up -d` before migrations.
+audit data. `npm run db:local:start` uses the installed native PostgreSQL 17 binaries and keeps the
+cluster under `%LOCALAPPDATA%\YERSPS\PostgreSQL`; Docker is not required. The default local port is
+`55432`, which avoids conflicts with other PostgreSQL installations. Stop only this project cluster
+with `npm run db:local:stop`.
 
-## Full production-style Docker stack
+### pgAdmin connection
 
-Copy `.env.production.example` to `.env.production`, replace both secrets, and run:
+pgAdmin 4 can connect directly to the native cluster; no container or Docker network is involved.
+The project registers a server named `YERSPS Local PostgreSQL` with these values:
+
+- Host: `127.0.0.1`
+- Port: `55432`
+- Maintenance database: `yersps`
+- Username: `yersps_pgadmin`
+- Password: the password in `DATABASE_ADMIN_URL`
+
+The API uses the separate `yersps_app` role from `DATABASE_URL`. That role cannot create databases,
+create roles, or act as a PostgreSQL superuser. Run `npm run db:local:start` before opening the
+registered pgAdmin server after a reboot.
+
+In development, authentication attempts are not rate limited, so repeated local testing does not
+show a "too many attempts" response. Production keeps the 20-attempt-per-15-minute protection.
+`npm run db:seed` creates only required reference sectors, assessment domains, and assessment
+questions. It never creates users or sample businesses. Before the one-time
+`npm run admin:bootstrap`, replace the System Administrator email and password in `.env`. An
+existing non-administrator account is never silently promoted; an existing System Administrator
+password changes only when `SYSTEM_ADMIN_ROTATE_PASSWORD=true`.
+
+New accounts can enter their role-specific workflow immediately after registration. Configure SMTP
+for email and Twilio for SMS using the optional variables in `.env.example`. Password-reset links
+use one-time tokens; development can expose a reset token locally while production never returns it.
+Workflow notifications remain available in the authenticated in-app notification card.
+
+Role boundaries are server-enforced: Experts can work only with Entrepreneurs assigned by a System
+Administrator and can add assessment questions from their field expertise. User management,
+Expert approval, assignments, question editing/deletion, configuration changes, reports, and audit
+logs are System Administrator only.
+
+An Expert account starts with a Draft professional profile. Submitting the completed profile moves
+it to Pending, locks it to a read-only review summary, and creates a System Administrator
+notification. Draft profiles are not shown in the review queue. A rejection reopens the profile for
+revision and resubmission; approval unlocks the Expert workspace.
+
+## Backup and recovery
+
+With PostgreSQL client tools installed, create a timestamped backup outside the source checkout in
+`%LOCALAPPDATA%\YERSPS\Backups`:
 
 ```powershell
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+npm run db:backup
 ```
 
-The website is then available at `http://localhost:8080`. Nginx serves the React application and
-proxies `/api` to the API container; PostgreSQL remains internal to the Docker network.
+Restore only after verifying the target database and backup path:
+
+```powershell
+npm run db:restore -- -BackupPath "$env:LOCALAPPDATA\YERSPS\Backups\yersps-YYYYMMDD-HHMMSS.dump" -ConfirmRestore
+```
+
+The restore command refuses files outside that protected backup directory and requires the explicit
+confirmation switch.
+
+## Production configuration
+
+Install PostgreSQL and Node.js directly on the production host. Create a dedicated PostgreSQL role
+and database, copy `.env.production.example` to `.env.production`, replace every example hostname
+and secret, then run from the repository root:
+
+```powershell
+npm ci
+npm run db:migrate:production
+npm run db:seed:production
+npm run admin:bootstrap:production
+npm run build
+npm run start:production
+```
+
+Remove `SYSTEM_ADMIN_PASSWORD` from `.env.production` after the bootstrap succeeds. In production,
+Express serves the built React application and `/api/v1` from the configured port. Put a TLS reverse
+proxy in front of that port, use the same public HTTPS origin in `WEB_ORIGIN` and `APP_BASE_URL`, and
+keep PostgreSQL bound to a private interface. Run `npm run db:migrate:production` before each release
+and manage the Node process with the host service manager.
 
 ## Quality commands
 
@@ -61,7 +134,10 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm test
+npm run test:e2e
 npm run build
 ```
 
-See `docs/IMPLEMENTATION_PLAN.md` for implemented scope, assumptions, and the remaining phases.
+The end-to-end suite creates isolated temporary accounts and removes them when it finishes. It needs
+the migrated/seeded local database and a Playwright Chromium install
+(`npx playwright install chromium`). CI provisions both automatically.

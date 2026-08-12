@@ -1,8 +1,6 @@
 import {
   ArrowRight,
   BarChart3,
-  BadgeCheck,
-  CheckCircle2,
   ClipboardCheck,
   UserRound,
   Lock,
@@ -66,14 +64,14 @@ export const AppDashboardPage = () => {
               <span className="progress-value">{profileCompletePct}%</span>
             </div>
             <div className="progress-bar-track">
-              <div 
-                className="progress-bar-fill" 
-                style={{ width: `${Math.min(100, Math.max(0, profileCompletePct))}%` }} 
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${Math.min(100, Math.max(0, profileCompletePct))}%` }}
               />
             </div>
             <p className="progress-subtext">
-              {hasProfile 
-                ? 'Profile fully updated. Ready for assessment.' 
+              {hasProfile
+                ? 'Profile fully updated. Ready for assessment.'
                 : 'Complete your profile details to unlock full features.'}
             </p>
           </div>
@@ -125,7 +123,9 @@ export const AppDashboardPage = () => {
               <span className="stat-title">Readiness Assessment</span>
               <div className="stat-status">
                 {latestResult ? (
-                  <span className={`badge ${latestResult.overallScore >= 70 ? 'badge-success' : 'badge-danger'}`}>
+                  <span
+                    className={`badge ${latestResult.overallScore >= 70 ? 'badge-success' : 'badge-danger'}`}
+                  >
                     Score: {Math.round(latestResult.overallScore)}/100
                   </span>
                 ) : canAssess ? (
@@ -146,36 +146,21 @@ export const AppDashboardPage = () => {
             <section className="dashboard-card-panel">
               <div className="panel-header">
                 <h2>Next Action Steps</h2>
-                <span className="panel-subtitle">Follow these steps to complete your profile and readiness review.</span>
+                <span className="panel-subtitle">
+                  Follow these steps to complete your profile and readiness review.
+                </span>
               </div>
 
               <div className="steps-list">
-                {/* Contact Verification */}
-                <article className="step-card">
-                  <div className="step-number-badge text-emerald-600 bg-emerald-50">
-                    <BadgeCheck className="w-5 h-5" />
-                  </div>
-                  <div className="step-details">
-                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Security</div>
-                    <h3>Verify your contact details</h3>
-                    <p>Confirm control of the email address or phone number linked to your account.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={() => navigate('/app/verify-contact')}
-                  >
-                    Verify <ArrowRight className="w-4 h-4 ml-1" />
-                  </button>
-                </article>
-
                 {/* Profile Completion Step */}
                 <article className="step-card">
                   <div className="step-number-badge text-slate-700 bg-slate-100">
                     <UserRound className="w-5 h-5" />
                   </div>
                   <div className="step-details">
-                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Step 1</div>
+                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                      Step 1
+                    </div>
                     <h3>Complete personal profile</h3>
                     <p>Provide education, location, experience, and contact preferences.</p>
                   </div>
@@ -184,7 +169,8 @@ export const AppDashboardPage = () => {
                     className="btn btn-secondary"
                     onClick={() => navigate('/app/profile')}
                   >
-                    {hasProfile ? 'Review Profile' : 'Complete Profile'} <ArrowRight className="w-4 h-4 ml-1" />
+                    {hasProfile ? 'Review Profile' : 'Complete Profile'}{' '}
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </article>
 
@@ -194,7 +180,9 @@ export const AppDashboardPage = () => {
                     <ClipboardCheck className="w-5 h-5" />
                   </div>
                   <div className="step-details">
-                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Step 2</div>
+                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                      Step 2
+                    </div>
                     <h3>Manage your innovations</h3>
                     <p>Add and maintain your business ideas or enterprise details.</p>
                   </div>
@@ -203,20 +191,29 @@ export const AppDashboardPage = () => {
                     className="btn btn-secondary"
                     onClick={() => navigate('/app/innovations')}
                   >
-                    {hasBusiness ? 'Manage Business' : 'Add Innovation'} <ArrowRight className="w-4 h-4 ml-1" />
+                    {hasBusiness ? 'Manage Business' : 'Add Innovation'}{' '}
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </article>
 
                 {/* Readiness Step */}
                 <article className={`step-card ${!canAssess ? 'step-locked' : ''}`}>
                   <div className="step-number-badge text-slate-700 bg-slate-100">
-                    {!canAssess ? <Lock className="w-5 h-5 text-slate-400" /> : <BarChart3 className="w-5 h-5" />}
+                    {!canAssess ? (
+                      <Lock className="w-5 h-5 text-slate-400" />
+                    ) : (
+                      <BarChart3 className="w-5 h-5" />
+                    )}
                   </div>
                   <div className="step-details">
-                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Step 3</div>
+                    <div className="step-tag font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                      Step 3
+                    </div>
                     <h3>Take readiness assessment</h3>
                     {canAssess ? (
-                      <p>Answer evidence-based questions to generate an explainable score and report.</p>
+                      <p>
+                        Answer evidence-based questions to generate an explainable score and report.
+                      </p>
                     ) : (
                       <p className="text-amber-700 font-medium text-xs mt-1 flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" />
@@ -252,7 +249,9 @@ export const AppDashboardPage = () => {
                       <span className="badge badge-dark">
                         {latestResult.readinessLevel.replaceAll('_', ' ')}
                       </span>
-                      <span className={`badge ${latestResult.riskLevel === 'HIGH_RISK' ? 'badge-danger' : 'badge-neutral'}`}>
+                      <span
+                        className={`badge ${latestResult.riskLevel === 'HIGH_RISK' ? 'badge-danger' : 'badge-neutral'}`}
+                      >
                         Risk: {latestResult.riskLevel.replaceAll('_', ' ')}
                       </span>
                     </div>
@@ -313,8 +312,8 @@ export const AppDashboardPage = () => {
                     <Sparkles className="w-4 h-4 text-amber-600" />
                     <h2>Recommended Actions</h2>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="text-xs font-semibold text-slate-700 hover:text-slate-900"
                     onClick={() => navigate('/app/recommendations')}
                   >
@@ -345,7 +344,8 @@ export const AppDashboardPage = () => {
                 <div>
                   <h4 className="font-semibold text-slate-900 text-sm">Need Guidance?</h4>
                   <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                    Check expert feedback or update your innovation details to receive tailored support.
+                    Check expert feedback or update your innovation details to receive tailored
+                    support.
                   </p>
                 </div>
               </div>

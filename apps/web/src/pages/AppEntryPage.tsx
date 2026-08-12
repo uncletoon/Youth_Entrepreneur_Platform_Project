@@ -5,7 +5,7 @@ import { AppDashboardPage } from './AppDashboardPage';
 export const AppEntryPage = () => {
   const { user } = useAuth();
   if (user?.role === 'SYSTEM_ADMIN') return <Redirect to="/admin" />;
-  if (user?.role === 'ADMIN')
+  if (user?.role === 'EXPERT')
     return (
       <Redirect to={user.expertApprovalStatus === 'APPROVED' ? '/admin' : '/expert/profile'} />
     );

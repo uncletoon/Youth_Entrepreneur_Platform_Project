@@ -30,6 +30,9 @@ export const AssessmentPage = () => {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  );
   const [currentDomainIndex, setCurrentDomainIndex] = useState(0);
   const businessId = new URLSearchParams(window.location.search).get('businessId') ?? undefined;
 
@@ -48,6 +51,24 @@ export const AssessmentPage = () => {
         setError(reason instanceof Error ? reason.message : 'Could not start assessment.'),
       );
   }, [accessToken, businessId]);
+
+  useEffect(() => {
+    if (!data || !accessToken || Object.keys(answers).length === 0) return;
+    setAutosaveStatus('saving');
+    const timeout = window.setTimeout(async () => {
+      try {
+        const responses = Object.entries(answers).map(([questionId, value]) => ({
+          questionId,
+          value,
+        }));
+        await entrepreneurApi.saveResponses(accessToken, data.session.id, responses);
+        setAutosaveStatus('saved');
+      } catch {
+        setAutosaveStatus('error');
+      }
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [accessToken, answers, data]);
 
   // Group questions by domain
   const domains: DomainGroup[] = data
@@ -71,11 +92,14 @@ export const AssessmentPage = () => {
   const allComplete = domains.every((d) => isDomainComplete(d));
   const answeredTotal = Object.keys(answers).length;
   const totalQuestions = data?.questions.length ?? 0;
-  const overallProgress = totalQuestions > 0 ? Math.round((answeredTotal / totalQuestions) * 100) : 0;
+  const overallProgress =
+    totalQuestions > 0 ? Math.round((answeredTotal / totalQuestions) * 100) : 0;
 
   const handleNext = () => {
     if (!currentDomain || !isDomainComplete(currentDomain)) {
-      setError(`Please answer all questions in "${currentDomain?.name ?? 'this domain'}" before continuing.`);
+      setError(
+        `Please answer all questions in "${currentDomain?.name ?? 'this domain'}" before continuing.`,
+      );
       return;
     }
     setError('');
@@ -113,13 +137,15 @@ export const AssessmentPage = () => {
   const saveProgress = async () => {
     if (!data || Object.keys(answers).length === 0) return;
     try {
+      setAutosaveStatus('saving');
       const responses = Object.entries(answers).map(([questionId, value]) => ({
         questionId,
         value,
       }));
       await entrepreneurApi.saveResponses(accessToken as string, data.session.id, responses);
+      setAutosaveStatus('saved');
     } catch {
-      // Silent save - user can continue
+      setAutosaveStatus('error');
     }
   };
 
@@ -136,7 +162,9 @@ export const AssessmentPage = () => {
           <div className="assessment-progress-header">
             <div className="assessment-progress-info">
               <span className="eyebrow">Readiness assessment</span>
-              <p>{answeredTotal} of {totalQuestions} questions answered</p>
+              <p>
+                {answeredTotal} of {totalQuestions} questions answered
+              </p>
             </div>
             <div className="assessment-overall-progress">
               <div className="assessment-progress-track">
@@ -163,11 +191,12 @@ export const AssessmentPage = () => {
                 }}
               >
                 <span className="domain-step__number">
-                  {isDomainComplete(domain) ? '✓' : index + 1}
+                  {isDomainComplete(domain) ? 'Done' : index + 1}
                 </span>
                 <span className="domain-step__name">{domain.name}</span>
                 <span className="domain-step__count">
-                  {domain.questions.filter((q) => answers[q.id] !== undefined).length}/{domain.questions.length}
+                  {domain.questions.filter((q) => answers[q.id] !== undefined).length}/
+                  {domain.questions.length}
                 </span>
               </button>
             ))}
@@ -186,7 +215,9 @@ export const AssessmentPage = () => {
                   </p>
                 </div>
                 <div className="domain-completion-badge">
-                  <span>{currentDomain.questions.filter((q) => answers[q.id] !== undefined).length}</span>
+                  <span>
+                    {currentDomain.questions.filter((q) => answers[q.id] !== undefined).length}
+                  </span>
                   <small>of {currentDomain.questions.length} answered</small>
                 </div>
               </div>
@@ -197,14 +228,15 @@ export const AssessmentPage = () => {
                     <small>{currentDomain.name}</small>
                     {index + 1}. {question.prompt}
                   </legend>
-                  {question.helpText && (
-                    <p className="question-help-text">{question.helpText}</p>
-                  )}
+                  {question.helpText && <p className="question-help-text">{question.helpText}</p>}
                   <div className="rating-options">
                     {RATING_LABELS.map((label, option) => {
                       const value = option + 1;
                       return (
-                        <label key={label} className={answers[question.id] === value ? 'selected' : ''}>
+                        <label
+                          key={label}
+                          className={answers[question.id] === value ? 'selected' : ''}
+                        >
                           <input
                             type="radio"
                             name={question.id}
@@ -241,6 +273,18 @@ export const AssessmentPage = () => {
               ← Previous domain
             </button>
             <div className="assessment-nav-center">
+              <span
+                className={`autosave-status autosave-status--${autosaveStatus}`}
+                aria-live="polite"
+              >
+                {autosaveStatus === 'saving'
+                  ? 'Saving changes...'
+                  : autosaveStatus === 'saved'
+                    ? 'Progress saved'
+                    : autosaveStatus === 'error'
+                      ? 'Autosave failed. Use Save progress.'
+                      : 'Changes save automatically'}
+              </span>
               <button
                 type="button"
                 className="assessment-save-btn"

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const userRoleSchema = z.enum(['SYSTEM_ADMIN', 'ADMIN', 'ENTREPRENEUR']);
+export const userRoleSchema = z.enum(['SYSTEM_ADMIN', 'EXPERT', 'ENTREPRENEUR']);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
 export const expertApprovalStatusSchema = z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED']);
@@ -37,7 +37,7 @@ export const registerSchema = z
       .regex(/[A-Z]/, 'Include an uppercase letter.')
       .regex(/[0-9]/, 'Include a number.'),
     passwordConfirmation: z.string(),
-    role: z.enum(['ADMIN', 'ENTREPRENEUR'], {
+    role: z.enum(['EXPERT', 'ENTREPRENEUR'], {
       error: 'Choose whether you are an entrepreneur or an expert.',
     }),
     consent: z.literal(true, { error: 'You must accept the privacy notice.' }),
@@ -69,18 +69,13 @@ export const passwordResetSchema = z.object({
 });
 export type PasswordResetInput = z.infer<typeof passwordResetSchema>;
 
-export const contactVerificationSchema = z.object({
-  token: z.string().min(20, 'The verification token is invalid.'),
-});
-export type ContactVerificationInput = z.infer<typeof contactVerificationSchema>;
-
 export const authUserSchema = z.object({
   id: z.string().uuid(),
   fullName: z.string(),
   email: z.string().email().nullable(),
   phone: z.string().nullable(),
   role: userRoleSchema,
-  status: z.enum(['ACTIVE', 'DISABLED', 'PENDING_VERIFICATION']),
+  status: z.enum(['ACTIVE', 'DISABLED']),
   profileCompletion: z.number().int().min(0).max(100),
   expertApprovalStatus: expertApprovalStatusSchema.nullable(),
 });
@@ -91,6 +86,11 @@ export const authPayloadSchema = z.object({
   accessToken: z.string(),
 });
 export type AuthPayload = z.infer<typeof authPayloadSchema>;
+
+export const accountProfileSchema = z.object({
+  fullName: z.string().trim().min(2, 'Enter your full name.').max(150),
+});
+export type AccountProfileInput = z.infer<typeof accountProfileSchema>;
 
 export const entrepreneurProfileSchema = z.object({
   ageGroup: z.string().trim().min(1),
@@ -141,6 +141,10 @@ export const businessProfileSchema = z.object({
   registrationStatus: z.string().trim().min(1),
   salesChannel: z.string().trim().min(1),
   mainRisks: z.string().trim().min(3),
+  supportingDocumentName: z.string().trim().max(200).optional(),
+  supportingDocumentUrl: z
+    .union([z.string().url('Enter a valid document URL.'), z.literal('')])
+    .optional(),
   selectedSectorId: z.string().uuid().optional(),
 });
 export type BusinessProfileInput = z.infer<typeof businessProfileSchema>;

@@ -1,16 +1,18 @@
 import {
-  contactVerificationSchema,
+  accountProfileSchema,
   loginSchema,
   passwordResetRequestSchema,
   passwordResetSchema,
   registerSchema,
 } from '@yersps/contracts';
 import { Router } from 'express';
+import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import { env } from '../../config/env.js';
 import { authenticate, type AuthenticatedRequest } from '../../middlewares/authenticate.js';
 import { AuthError } from './auth.errors.js';
 import { authService } from './auth.service.js';
+import { deliveryService } from '../../services/delivery.service.js';
 
 const REFRESH_COOKIE = 'yersps_refresh';
 const cookieOptions = {
@@ -24,6 +26,7 @@ const cookieOptions = {
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
+  skip: () => env.NODE_ENV !== 'production',
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: {
@@ -111,15 +114,23 @@ authRouter.post('/password-reset/request', authLimiter, async (request, response
         parsed.error.issues[0]?.message ?? 'Check the form.',
         400,
       );
-    const token = await authService.requestPasswordReset(
+    const reset = await authService.requestPasswordReset(
       parsed.data.identifier,
       contextFor(request),
     );
+    if (reset)
+      void deliveryService.accountLink(
+        reset.user,
+        'Reset your YERSPS password',
+        'Use this secure link to choose a new password.',
+        '/forgot-password',
+        reset.token,
+      );
     response.json({
       success: true,
       data: {
         message: 'If the account exists, password reset instructions are ready.',
-        ...(env.NODE_ENV !== 'production' && token ? { developmentToken: token } : {}),
+        ...(env.NODE_ENV !== 'production' && reset ? { developmentToken: reset.token } : {}),
       },
     });
   } catch (error) {
@@ -143,37 +154,62 @@ authRouter.post('/password-reset/complete', authLimiter, async (request, respons
   }
 });
 
-authRouter.post(
-  '/verification/request',
+authRouter.get(
+  '/account/export',
   authenticate,
   async (request: AuthenticatedRequest, response, next) => {
     try {
-      const token = await authService.requestContactVerification(request.auth!.userId);
-      response.json({
-        success: true,
-        data: {
-          message: token ? 'Verification instructions are ready.' : 'Contact is already verified.',
-          ...(env.NODE_ENV !== 'production' && token ? { developmentToken: token } : {}),
-        },
-      });
+      const account = await authService.exportAccount(request.auth!.userId);
+      response.setHeader('Content-Type', 'application/json; charset=utf-8');
+      response.setHeader('Content-Disposition', 'attachment; filename="yersps-account-data.json"');
+      response.send(JSON.stringify({ exportedAt: new Date().toISOString(), account }, null, 2));
     } catch (error) {
       next(error);
     }
   },
 );
 
-authRouter.post('/verification/complete', authLimiter, async (request, response, next) => {
-  try {
-    const parsed = contactVerificationSchema.safeParse(request.body);
-    if (!parsed.success)
-      throw new AuthError(
-        'VALIDATION_ERROR',
-        parsed.error.issues[0]?.message ?? 'Check the form.',
-        400,
+authRouter.put(
+  '/account/profile',
+  authenticate,
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const parsed = accountProfileSchema.safeParse(request.body);
+      if (!parsed.success)
+        throw new AuthError(
+          'VALIDATION_ERROR',
+          parsed.error.issues[0]?.message ?? 'Check the profile information.',
+          400,
+        );
+      const user = await authService.updateAccountProfile(
+        request.auth!.userId,
+        parsed.data,
+        contextFor(request),
       );
-    await authService.verifyContact(parsed.data.token);
-    response.json({ success: true, data: { message: 'Contact verified.' } });
-  } catch (error) {
-    next(error);
-  }
-});
+      response.json({ success: true, data: user });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+authRouter.post(
+  '/account/deactivate',
+  authenticate,
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const parsed = z.object({ password: z.string().min(1) }).safeParse(request.body);
+      if (!parsed.success)
+        throw new AuthError(
+          'VALIDATION_ERROR',
+          'Enter your password to deactivate the account.',
+          400,
+        );
+      await authService.deactivateAccount(request.auth!.userId, parsed.data.password);
+      response.clearCookie(REFRESH_COOKIE, cookieOptions);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  },
+);

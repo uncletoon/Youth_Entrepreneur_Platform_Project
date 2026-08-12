@@ -13,8 +13,7 @@
     "@yersps/contracts": "*",
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "zod": "^4.4.3"
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

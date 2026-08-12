@@ -2,6 +2,8 @@ import {
   ArrowLeft,
   BarChart3,
   Building2,
+  ExternalLink,
+  FileText,
   MessageSquareText,
   Sparkles,
   UserRound,
@@ -20,6 +22,11 @@ const TAB_ITEMS: { value: DetailTab; label: string; Icon: typeof UserRound }[] =
   { value: 'assessments', label: 'Assessments', Icon: BarChart3 },
   { value: 'guidance', label: 'Guidance', Icon: MessageSquareText },
 ];
+
+const formatMoney = (value: string | number | null) =>
+  value == null
+    ? 'Not specified'
+    : `${new Intl.NumberFormat('en-RW', { maximumFractionDigits: 0 }).format(Number(value))} RWF`;
 
 export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
   const { accessToken } = useAuth();
@@ -40,7 +47,9 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
       setError(reason instanceof Error ? reason.message : 'Could not load entrepreneur details.');
     }
   };
-  useEffect(() => { void load(); }, [accessToken, userId]);
+  useEffect(() => {
+    void load();
+  }, [accessToken, userId]);
 
   const selectedBusiness = useMemo(
     () => data?.businesses.find((item) => item.id === selectedBusinessId),
@@ -178,7 +187,10 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
           {tab === 'innovations' ? (
             <section className="expert-innovation-list">
               {data.businesses.length === 0 ? (
-                <div className="admin-panel" style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>
+                <div
+                  className="admin-panel"
+                  style={{ textAlign: 'center', color: 'var(--muted)', padding: '40px' }}
+                >
                   No innovations have been registered yet.
                 </div>
               ) : (
@@ -194,35 +206,89 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
                       </span>
                       <div>
                         <small>
-                          {business.sector?.name ?? 'Sector pending'} · {business.stage}
+                          {business.sector?.name ?? 'Sector pending'} ·{' '}
+                          {business.stage.replaceAll('_', ' ')}
                         </small>
                         <h2>{business.name}</h2>
                       </div>
                     </header>
-                    <p>{business.description}</p>
-                    <dl>
+                    <p className="expert-innovation-summary">{business.description}</p>
+                    <section
+                      className="expert-innovation-story"
+                      aria-label={`${business.name} information`}
+                    >
                       <div>
-                        <dt>Problem</dt>
-                        <dd>{business.problemSolved ?? 'Not specified'}</dd>
+                        <h3>Problem being solved</h3>
+                        <p>{business.problemSolved ?? 'Not specified'}</p>
                       </div>
                       <div>
-                        <dt>Offer</dt>
-                        <dd>{business.productOrService}</dd>
+                        <h3>Product or service</h3>
+                        <p>{business.productOrService}</p>
                       </div>
                       <div>
-                        <dt>Customers</dt>
-                        <dd>{business.targetCustomers ?? 'Not specified'}</dd>
+                        <h3>Target customers</h3>
+                        <p>{business.targetCustomers ?? 'Not specified'}</p>
                       </div>
                       <div>
-                        <dt>Revenue model</dt>
-                        <dd>{business.revenueModel ?? 'Not specified'}</dd>
+                        <h3>Revenue model</h3>
+                        <p>{business.revenueModel ?? 'Not specified'}</p>
+                      </div>
+                    </section>
+                    <dl className="expert-business-facts">
+                      <div>
+                        <dt>Location</dt>
+                        <dd>{business.location || 'Not specified'}</dd>
+                      </div>
+                      <div>
+                        <dt>Team size</dt>
+                        <dd>{business.teamSize}</dd>
+                      </div>
+                      <div>
+                        <dt>Estimated startup capital</dt>
+                        <dd>{formatMoney(business.estimatedStartupCapital)}</dd>
+                      </div>
+                      <div>
+                        <dt>Available capital</dt>
+                        <dd>{formatMoney(business.availableCapital)}</dd>
+                      </div>
+                      <div>
+                        <dt>Registration status</dt>
+                        <dd>{business.registrationStatus || 'Not specified'}</dd>
+                      </div>
+                      <div>
+                        <dt>Primary sales channel</dt>
+                        <dd>{business.salesChannel || 'Not specified'}</dd>
+                      </div>
+                      <div>
+                        <dt>Added to YERSPS</dt>
+                        <dd>{new Date(business.createdAt).toLocaleDateString()}</dd>
+                      </div>
+                      <div className="wide">
+                        <dt>Main risks</dt>
+                        <dd>{business.mainRisks || 'Not specified'}</dd>
                       </div>
                     </dl>
+                    {business.supportingDocumentUrl ? (
+                      <a
+                        className="innovation-document"
+                        href={business.supportingDocumentUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <FileText aria-hidden="true" />
+                        <span>
+                          <strong>
+                            {business.supportingDocumentName || 'Supporting document'}
+                          </strong>
+                          <small>Open and read the Entrepreneur's document</small>
+                        </span>
+                        <ExternalLink aria-hidden="true" />
+                      </a>
+                    ) : null}
                     {business.classifications[0] ? (
                       <div className="classification-note">
-                        <strong>
-                          Classification: {business.classifications[0].status}
-                        </strong>
+                        <strong>Classification: {business.classifications[0].status}</strong>
                         <span>
                           {Math.round(business.classifications[0].confidence * 100)}% confidence
                         </span>
@@ -239,104 +305,140 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
           {tab === 'assessments' ? (
             <>
               <section className="admin-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Innovation</th>
-                    <th>Submitted</th>
-                    <th>Score</th>
-                    <th>Readiness</th>
-                    <th>Risk</th>
-                    <th>Review state</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.assessmentSessions.length === 0 ? (
+                <table>
+                  <thead>
                     <tr>
-                      <td colSpan={6} className="table-empty">
-                        No assessments submitted yet.
-                      </td>
+                      <th>Innovation</th>
+                      <th>Submitted</th>
+                      <th>Score</th>
+                      <th>Readiness</th>
+                      <th>Risk</th>
+                      <th>Review state</th>
                     </tr>
-                  ) : (
-                    data.assessmentSessions.map((session) => (
-                      <tr 
-                        key={session.id} 
-                        onClick={() => setSelectedSessionId(session.id)}
-                        style={{ cursor: 'pointer', background: selectedSessionId === session.id ? 'var(--background)' : 'transparent' }}
-                      >
-                        <td>
-                          {data.businesses.find((b) => b.id === session.businessId)?.name ??
-                            'Innovation'}
-                        </td>
-                        <td>
-                          {session.submittedAt
-                            ? new Date(session.submittedAt).toLocaleDateString()
-                            : 'In progress'}
-                        </td>
-                        <td>
-                          {session.result ? `${Math.round(session.result.overallScore)}/100` : 'Pending'}
-                        </td>
-                        <td>
-                          {session.result?.readinessLevel.replaceAll('_', ' ') ?? 'Pending'}
-                        </td>
-                        <td>
-                          {session.result?.riskLevel.replaceAll('_', ' ') ?? 'Pending'}
-                        </td>
-                        <td>
-                          <select
-                            value={session.status}
-                            className="status-select"
-                            disabled={!session.result}
-                            onChange={(event) =>
-                              void run(
-                                () =>
-                                  adminApi.review(
-                                    accessToken as string,
-                                    session.id,
-                                    event.target.value,
-                                  ),
-                                'Assessment review status updated.',
-                              )
-                            }
-                          >
-                            <option value="DRAFT">Draft</option>
-                            <option value="IN_PROGRESS">In progress</option>
-                            <option value="SUBMITTED">Submitted</option>
-                            <option value="UNDER_REVIEW">Under review</option>
-                            <option value="REVIEWED">Reviewed</option>
-                            <option value="ARCHIVED">Archived</option>
-                          </select>
+                  </thead>
+                  <tbody>
+                    {data.assessmentSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="table-empty">
+                          No assessments submitted yet.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
-            
-            {selectedSessionId && data.assessmentSessions.find(s => s.id === selectedSessionId)?.responses ? (
-              <section className="admin-panel" style={{ marginTop: '24px' }}>
-                <h2>Assessment answers</h2>
-                <div className="responses-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
-                  {data.assessmentSessions.find(s => s.id === selectedSessionId)?.responses.map((response) => (
-                    <article key={response.id} style={{ padding: '16px', background: 'var(--background)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                      <strong style={{ display: 'block', marginBottom: '8px' }}>{response.question.prompt}</strong>
-                      <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-                        {response.question.type === 'FILE_EVIDENCE' ? (
-                          <a href={String(response.answer)} target="_blank" rel="noreferrer" style={{ color: 'var(--brand)' }}>View attached evidence</a>
-                        ) : response.question.type === 'LIKERT' ? (
-                          <span>Score: {String(response.answer)} / 5</span>
-                        ) : typeof response.answer === 'object' ? (
-                          <pre style={{ margin: 0, fontFamily: 'inherit' }}>{JSON.stringify(response.answer, null, 2)}</pre>
-                        ) : (
-                          <span>{String(response.answer)}</span>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </div>
+                    ) : (
+                      data.assessmentSessions.map((session) => (
+                        <tr
+                          key={session.id}
+                          onClick={() => setSelectedSessionId(session.id)}
+                          style={{
+                            cursor: 'pointer',
+                            background:
+                              selectedSessionId === session.id
+                                ? 'var(--background)'
+                                : 'transparent',
+                          }}
+                        >
+                          <td>
+                            {data.businesses.find((b) => b.id === session.businessId)?.name ??
+                              'Innovation'}
+                          </td>
+                          <td>
+                            {session.submittedAt
+                              ? new Date(session.submittedAt).toLocaleDateString()
+                              : 'In progress'}
+                          </td>
+                          <td>
+                            {session.result
+                              ? `${Math.round(session.result.overallScore)}/100`
+                              : 'Pending'}
+                          </td>
+                          <td>
+                            {session.result?.readinessLevel.replaceAll('_', ' ') ?? 'Pending'}
+                          </td>
+                          <td>{session.result?.riskLevel.replaceAll('_', ' ') ?? 'Pending'}</td>
+                          <td>
+                            <select
+                              value={session.status}
+                              className="status-select"
+                              disabled={!session.result}
+                              onChange={(event) =>
+                                void run(
+                                  () =>
+                                    adminApi.review(
+                                      accessToken as string,
+                                      session.id,
+                                      event.target.value,
+                                    ),
+                                  'Assessment review status updated.',
+                                )
+                              }
+                            >
+                              <option value="DRAFT">Draft</option>
+                              <option value="IN_PROGRESS">In progress</option>
+                              <option value="SUBMITTED">Submitted</option>
+                              <option value="UNDER_REVIEW">Under review</option>
+                              <option value="REVIEWED">Reviewed</option>
+                              <option value="ARCHIVED">Archived</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </section>
-            ) : null}
+
+              {selectedSessionId &&
+              data.assessmentSessions.find((s) => s.id === selectedSessionId)?.responses ? (
+                <section className="admin-panel" style={{ marginTop: '24px' }}>
+                  <h2>Assessment answers</h2>
+                  <div
+                    className="responses-list"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '16px',
+                      marginTop: '16px',
+                    }}
+                  >
+                    {data.assessmentSessions
+                      .find((s) => s.id === selectedSessionId)
+                      ?.responses.map((response) => (
+                        <article
+                          key={response.id}
+                          style={{
+                            padding: '16px',
+                            background: 'var(--background)',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
+                          <strong style={{ display: 'block', marginBottom: '8px' }}>
+                            {response.question.prompt}
+                          </strong>
+                          <div style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+                            {response.question.type === 'FILE_EVIDENCE' ? (
+                              <a
+                                href={String(response.answer)}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: 'var(--brand)' }}
+                              >
+                                View attached evidence
+                              </a>
+                            ) : response.question.type === 'LIKERT' ? (
+                              <span>Score: {String(response.answer)} / 5</span>
+                            ) : typeof response.answer === 'object' ? (
+                              <pre style={{ margin: 0, fontFamily: 'inherit' }}>
+                                {JSON.stringify(response.answer, null, 2)}
+                              </pre>
+                            ) : (
+                              <span>{String(response.answer)}</span>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : null}
 
@@ -377,16 +479,28 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
                   </button>
                 </form>
 
-                <form className="admin-panel guidance-form" style={{ marginTop: '16px' }} onSubmit={submitRecommendation}>
+                <form
+                  className="admin-panel guidance-form"
+                  style={{ marginTop: '16px' }}
+                  onSubmit={submitRecommendation}
+                >
                   <h2>
                     <Sparkles /> Add recommendation
                   </h2>
                   <input type="hidden" name="businessId" value={selectedBusinessId} />
                   <label>
                     Title
-                    <input name="title" minLength={5} required placeholder="Recommendation title…" />
+                    <input
+                      name="title"
+                      minLength={5}
+                      required
+                      placeholder="Recommendation title…"
+                    />
                   </label>
-                  <div className="form-grid compact" style={{ gridTemplateColumns: '1fr 1fr', margin: 0, gap: '10px' }}>
+                  <div
+                    className="form-grid compact"
+                    style={{ gridTemplateColumns: '1fr 1fr', margin: 0, gap: '10px' }}
+                  >
                     <label>
                       Category
                       <input name="category" defaultValue="Expert guidance" required />
@@ -402,14 +516,21 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
                   </div>
                   <label>
                     Description
-                    <textarea name="description" minLength={10} required placeholder="Describe the recommendation in detail." />
+                    <textarea
+                      name="description"
+                      minLength={10}
+                      required
+                      placeholder="Describe the recommendation in detail."
+                    />
                   </label>
                   <label>
                     Action steps
                     <textarea
                       name="actionSteps"
                       required
-                      placeholder={'One action per line:\nValidate prices with five customers\nUpdate the cash-flow plan'}
+                      placeholder={
+                        'One action per line:\nValidate prices with five customers\nUpdate the cash-flow plan'
+                      }
                     />
                   </label>
                   <button className="primary-action" type="submit" disabled={!selectedBusiness}>
@@ -432,6 +553,42 @@ export const AdminEntrepreneurDetailPage = ({ userId }: { userId: string }) => {
                       </small>
                       <strong>Feedback from {item.admin.fullName}</strong>
                       <p>{item.message}</p>
+                      {item.replies.length ? (
+                        <div className="feedback-replies">
+                          {item.replies.map((reply) => (
+                            <article key={reply.id}>
+                              <strong>{reply.author.fullName}</strong>
+                              <p>{reply.message}</p>
+                              <time>{new Date(reply.createdAt).toLocaleString()}</time>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+                      <form
+                        className="feedback-reply-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const form = event.currentTarget;
+                          const message = String(new FormData(form).get('message')).trim();
+                          if (message.length < 2) return;
+                          void run(
+                            () => adminApi.replyToFeedback(accessToken as string, item.id, message),
+                            'Reply sent to the entrepreneur.',
+                          );
+                          form.reset();
+                        }}
+                      >
+                        <label>
+                          <span className="sr-only">Reply in this feedback thread</span>
+                          <input
+                            name="message"
+                            minLength={2}
+                            required
+                            placeholder="Write a reply"
+                          />
+                        </label>
+                        <button type="submit">Send reply</button>
+                      </form>
                     </article>
                   ))}
                   {data.recommendations.map((item) => (

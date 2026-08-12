@@ -1,6 +1,8 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
 }
 
 datasource db {
@@ -9,14 +11,13 @@ datasource db {
 
 enum UserRole {
   SYSTEM_ADMIN
-  ADMIN
+  EXPERT
   ENTREPRENEUR
 }
 
 enum UserStatus {
   ACTIVE
   DISABLED
-  PENDING_VERIFICATION
 }
 
 enum ExpertApprovalStatus {
@@ -96,30 +97,33 @@ enum QuestionType {
 }
 
 model User {
-  id                    String               @id @default(uuid()) @db.Uuid
-  fullName              String
-  email                 String?              @unique
-  phone                 String?              @unique
-  passwordHash          String
-  role                  UserRole             @default(ENTREPRENEUR)
-  status                UserStatus           @default(ACTIVE)
-  consentAt             DateTime
-  lastLoginAt           DateTime?
-  contactVerifiedAt     DateTime?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  refreshTokens         RefreshToken[]
-  passwordResetTokens   PasswordResetToken[]
-  verificationTokens    VerificationToken[]
-  entrepreneurProfile   EntrepreneurProfile?
-  expertProfile         ExpertProfile?       @relation("ExpertAccount")
-  expertReviews         ExpertProfile[]      @relation("ExpertReviewer")
-  businesses            Business[]
-  assessmentSessions    AssessmentSession[]
-  recommendations       Recommendation[]
-  adminFeedbackGiven    AdminFeedback[]      @relation("AdminFeedbackAuthor")
-  adminFeedbackReceived AdminFeedback[]      @relation("AdminFeedbackRecipient")
-  auditLogs             AuditLog[]           @relation("AuditActor")
+  id                      String               @id @default(uuid()) @db.Uuid
+  fullName                String
+  email                   String?              @unique
+  phone                   String?              @unique
+  passwordHash            String
+  role                    UserRole             @default(ENTREPRENEUR)
+  status                  UserStatus           @default(ACTIVE)
+  consentAt               DateTime
+  lastLoginAt             DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  entrepreneurProfile     EntrepreneurProfile?
+  expertProfile           ExpertProfile?       @relation("ExpertAccount")
+  expertReviews           ExpertProfile[]      @relation("ExpertReviewer")
+  expertAssignments       ExpertAssignment[]   @relation("ExpertAssignee")
+  entrepreneurAssignments ExpertAssignment[]   @relation("EntrepreneurAssignee")
+  assignmentsCreated      ExpertAssignment[]   @relation("AssignmentCreator")
+  businesses              Business[]
+  assessmentSessions      AssessmentSession[]
+  recommendations         Recommendation[]
+  adminFeedbackGiven      AdminFeedback[]      @relation("AdminFeedbackAuthor")
+  adminFeedbackReceived   AdminFeedback[]      @relation("AdminFeedbackRecipient")
+  feedbackReplies         FeedbackReply[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]           @relation("AuditActor")
 
   @@index([role, status])
   @@index([createdAt])
@@ -152,19 +156,24 @@ model ExpertProfile {
   @@index([approvalStatus, submittedAt])
 }
 
-model PasswordResetToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model ExpertAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  expertId       String   @db.Uuid
+  entrepreneurId String   @db.Uuid
+  assignedById   String?  @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  expert         User     @relation("ExpertAssignee", fields: [expertId], references: [id], onDelete: Cascade)
+  entrepreneur   User     @relation("EntrepreneurAssignee", fields: [entrepreneurId], references: [id], onDelete: Cascade)
+  assignedBy     User?    @relation("AssignmentCreator", fields: [assignedById], references: [id], onDelete: SetNull)
 
-  @@index([userId, expiresAt])
+  @@unique([expertId, entrepreneurId])
+  @@index([expertId, active])
+  @@index([entrepreneurId, active])
 }
 
-model VerificationToken {
+model PasswordResetToken {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @db.Uuid
   tokenHash String    @unique
@@ -243,7 +252,10 @@ model Business {
   registrationStatus      String?
   salesChannel            String?
   mainRisks               String?
+  supportingDocumentName  String?
+  supportingDocumentUrl   String?
   profileCompletion       Int                      @default(0)
+  archivedAt              DateTime?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -253,7 +265,7 @@ model Business {
   adminFeedback           AdminFeedback[]
   recommendations         Recommendation[]
 
-  @@index([userId, stage])
+  @@index([userId, stage, archivedAt])
   @@index([sectorId])
 }
 
@@ -330,6 +342,7 @@ model AssessmentSession {
 
   @@index([userId, status])
   @@index([businessId, createdAt])
+  // A partial unique index in the database permits only one DRAFT/IN_PROGRESS session per business.
 }
 
 model AssessmentResponse {
@@ -387,18 +400,46 @@ model Recommendation {
 }
 
 model AdminFeedback {
-  id             String    @id @default(uuid()) @db.Uuid
-  entrepreneurId String    @db.Uuid
-  adminId        String    @db.Uuid
-  businessId     String?   @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
+  entrepreneurId String          @db.Uuid
+  adminId        String          @db.Uuid
+  businessId     String?         @db.Uuid
   message        String
-  createdAt      DateTime  @default(now())
-  entrepreneur   User      @relation("AdminFeedbackRecipient", fields: [entrepreneurId], references: [id], onDelete: Cascade)
-  admin          User      @relation("AdminFeedbackAuthor", fields: [adminId], references: [id], onDelete: Cascade)
-  business       Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  entrepreneur   User            @relation("AdminFeedbackRecipient", fields: [entrepreneurId], references: [id], onDelete: Cascade)
+  admin          User            @relation("AdminFeedbackAuthor", fields: [adminId], references: [id], onDelete: Cascade)
+  business       Business?       @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  replies        FeedbackReply[]
 
   @@index([entrepreneurId, createdAt])
   @@index([businessId, createdAt])
+}
+
+model FeedbackReply {
+  id         String        @id @default(uuid()) @db.Uuid
+  feedbackId String        @db.Uuid
+  authorId   String        @db.Uuid
+  message    String
+  createdAt  DateTime      @default(now())
+  feedback   AdminFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  author     User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  type      String
+  title     String
+  message   String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
 }
 
 model AuditLog {

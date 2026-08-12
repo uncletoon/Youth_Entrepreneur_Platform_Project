@@ -20,3 +20,49 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  end-to-end:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: yersps
+          POSTGRES_USER: yersps
+          POSTGRES_PASSWORD: yersps
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yersps -d yersps"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      WEB_ORIGIN: http://localhost:5173
+      VITE_API_URL: http://localhost:4000/api/v1
+      APP_BASE_URL: http://localhost:5173
+      DATABASE_URL: postgresql://yersps:yersps@localhost:5432/yersps
+      JWT_ACCESS_SECRET: ci-only-secret-with-at-least-thirty-two-characters
+      SYSTEM_ADMIN_NAME: E2E System Administrator
+      SYSTEM_ADMIN_EMAIL: e2e-system-admin@yersps.local
+      SYSTEM_ADMIN_PASSWORD: SystemPass1!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate:deploy
+      - run: npm run db:seed
+      - run: npm run admin:bootstrap
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -1,5 +1,5 @@
 import type { UserRole } from '@yersps/contracts';
-import { apiRequest } from '../auth/auth-api';
+import { apiRequest, apiRequestWithMeta } from '../auth/auth-api';
 
 export interface AdminOverview {
   entrepreneurs: number;
@@ -72,8 +72,7 @@ export interface SystemUserRow {
   email: string | null;
   phone: string | null;
   role: UserRole;
-  status: 'ACTIVE' | 'DISABLED' | 'PENDING_VERIFICATION';
-  contactVerifiedAt: string | null;
+  status: 'ACTIVE' | 'DISABLED';
   lastLoginAt: string | null;
   createdAt: string;
   expertProfile: { approvalStatus: string } | null;
@@ -113,6 +112,24 @@ export interface AuditRow {
   createdAt: string;
   actor: { fullName: string; email: string | null; role: UserRole } | null;
 }
+export interface ExpertAssignmentRow {
+  id: string;
+  active: boolean;
+  createdAt: string;
+  expert: {
+    id: string;
+    fullName: string;
+    email: string | null;
+    expertProfile: { expertiseField: string; approvalStatus: string } | null;
+  };
+  entrepreneur: { id: string; fullName: string; email: string | null; phone: string | null };
+  assignedBy: { fullName: string } | null;
+}
+export interface ExpertAssignmentData {
+  assignments: ExpertAssignmentRow[];
+  experts: { id: string; fullName: string; email: string | null }[];
+  entrepreneurs: { id: string; fullName: string; email: string | null; phone: string | null }[];
+}
 export interface EntrepreneurDetail {
   id: string;
   fullName: string;
@@ -127,10 +144,18 @@ export interface EntrepreneurDetail {
     problemSolved: string | null;
     productOrService: string;
     targetCustomers: string | null;
+    supportingDocumentName: string | null;
+    supportingDocumentUrl: string | null;
     location: string | null;
     stage: string;
     revenueModel: string | null;
+    estimatedStartupCapital: string | number | null;
+    availableCapital: string | number | null;
     teamSize: number;
+    registrationStatus: string | null;
+    salesChannel: string | null;
+    mainRisks: string | null;
+    createdAt: string;
     sector: { name: string } | null;
     classifications: { confidence: number; explanation: string; status: string }[];
   }[];
@@ -169,6 +194,12 @@ export interface EntrepreneurDetail {
     createdAt: string;
     admin: { fullName: string };
     business: { id: string; name: string } | null;
+    replies: {
+      id: string;
+      message: string;
+      createdAt: string;
+      author: { id: string; fullName: string; role: UserRole };
+    }[];
   }[];
 }
 
@@ -181,11 +212,12 @@ const mutation = (token: string, method: string, body: unknown) =>
 
 export const adminApi = {
   overview: (token: string) => apiRequest<AdminOverview>('/admin/overview', auth(token)),
-  entrepreneurs: (token: string) =>
-    apiRequest<EntrepreneurRow[]>('/admin/entrepreneurs', auth(token)),
+  entrepreneurs: (token: string, page = 1) =>
+    apiRequestWithMeta<EntrepreneurRow[]>(`/admin/entrepreneurs?page=${page}`, auth(token)),
   entrepreneur: (token: string, userId: string) =>
     apiRequest<EntrepreneurDetail>(`/admin/entrepreneurs/${userId}`, auth(token)),
-  assessments: (token: string) => apiRequest<AssessmentRow[]>('/admin/assessments', auth(token)),
+  assessments: (token: string, page = 1) =>
+    apiRequestWithMeta<AssessmentRow[]>(`/admin/assessments?page=${page}`, auth(token)),
   questions: (token: string) => apiRequest<QuestionRow[]>('/admin/questions', auth(token)),
   question: (token: string, questionId: string) =>
     apiRequest<QuestionRow>(`/admin/questions/${questionId}`, auth(token)),
@@ -195,6 +227,11 @@ export const adminApi = {
     apiRequest<unknown>(
       `/admin/entrepreneurs/${userId}/feedback`,
       mutation(token, 'POST', { businessId, message }),
+    ),
+  replyToFeedback: (token: string, feedbackId: string, message: string) =>
+    apiRequest<EntrepreneurDetail['adminFeedbackReceived'][number]['replies'][number]>(
+      `/admin/feedback/${feedbackId}/replies`,
+      mutation(token, 'POST', { message }),
     ),
   recommendation: (token: string, userId: string, input: unknown) =>
     apiRequest<unknown>(
@@ -219,12 +256,29 @@ export const adminApi = {
     apiRequest<SectorRow>(`/admin/sectors/${sectorId}`, mutation(token, 'PATCH', input)),
   updateDomain: (token: string, domainId: string, input: unknown) =>
     apiRequest<DomainRow>(`/admin/domains/${domainId}`, mutation(token, 'PATCH', input)),
-  users: (token: string) => apiRequest<SystemUserRow[]>('/system/users', auth(token)),
+  users: (token: string, page = 1) =>
+    apiRequestWithMeta<SystemUserRow[]>(`/system/users?page=${page}`, auth(token)),
   updateUser: (token: string, userId: string, input: unknown) =>
     apiRequest<SystemUserRow>(`/system/users/${userId}`, mutation(token, 'PATCH', input)),
-  audits: (token: string) => apiRequest<AuditRow[]>('/system/audit-logs', auth(token)),
-  expertApplications: (token: string) =>
-    apiRequest<ExpertApplicationRow[]>('/system/expert-applications', auth(token)),
+  audits: (token: string, page = 1) =>
+    apiRequestWithMeta<AuditRow[]>(`/system/audit-logs?page=${page}`, auth(token)),
+  expertAssignments: (token: string) =>
+    apiRequest<ExpertAssignmentData>('/system/expert-assignments', auth(token)),
+  createExpertAssignment: (token: string, expertId: string, entrepreneurId: string) =>
+    apiRequest<ExpertAssignmentRow>(
+      '/system/expert-assignments',
+      mutation(token, 'POST', { expertId, entrepreneurId }),
+    ),
+  removeExpertAssignment: (token: string, assignmentId: string) =>
+    apiRequest<void>(
+      `/system/expert-assignments/${assignmentId}`,
+      auth(token, { method: 'DELETE' }),
+    ),
+  expertApplications: (token: string, page = 1) =>
+    apiRequestWithMeta<ExpertApplicationRow[]>(
+      `/system/expert-applications?page=${page}`,
+      auth(token),
+    ),
   reviewExpert: (
     token: string,
     profileId: string,

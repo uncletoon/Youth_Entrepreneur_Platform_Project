@@ -1,8 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { AssessmentStatus, Prisma } from '../../generated/prisma/client.js';
 import { prisma } from '../../database/prisma.js';
-import { authenticate, type AuthenticatedRequest } from '../../middlewares/authenticate.js';
+import {
+  authenticate,
+  requireActiveAccount,
+  type AuthenticatedRequest,
+} from '../../middlewares/authenticate.js';
 import { AuthError } from '../auth/auth.errors.js';
+import { notificationService } from '../../services/notification.service.js';
 
 const router = Router();
 const feedbackSchema = z.object({
@@ -22,18 +28,7 @@ const questionSchema = z.object({
   code: z.string().trim().min(3).max(80),
   prompt: z.string().trim().min(10).max(1000),
   helpText: z.string().trim().max(1000).optional(),
-  type: z.enum([
-    'SINGLE_CHOICE',
-    'MULTIPLE_CHOICE',
-    'LIKERT',
-    'BOOLEAN',
-    'NUMBER',
-    'CURRENCY',
-    'SHORT_TEXT',
-    'LONG_TEXT',
-    'SCENARIO',
-    'FILE_EVIDENCE',
-  ]),
+  type: z.literal('LIKERT'),
   scope: z.enum(['CORE', 'SECTOR', 'STAGE']),
   domainId: z.string().uuid(),
   sectorId: z.string().uuid().nullable().optional(),
@@ -55,12 +50,50 @@ const domainSchema = z.object({
   description: z.string().trim().min(5),
   displayOrder: z.number().int().min(1).optional(),
 });
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+});
 
 const adminIdFor = (request: AuthenticatedRequest) => {
   if (!request.auth) throw new AuthError('AUTH_REQUIRED', 'Log in to continue.', 401);
-  if (!['ADMIN', 'SYSTEM_ADMIN'].includes(request.auth.role))
-    throw new AuthError('FORBIDDEN', 'Administrator access is required.', 403);
+  if (!['EXPERT', 'SYSTEM_ADMIN'].includes(request.auth.role))
+    throw new AuthError('FORBIDDEN', 'Expert access is required.', 403);
   return request.auth.userId;
+};
+
+const systemIdFor = (request: AuthenticatedRequest) => {
+  const userId = adminIdFor(request);
+  if (request.auth?.role !== 'SYSTEM_ADMIN')
+    throw new AuthError(
+      'SYSTEM_ADMIN_REQUIRED',
+      'System Administrator access is required for this operation.',
+      403,
+    );
+  return userId;
+};
+
+const assignedEntrepreneurWhere = (request: AuthenticatedRequest) =>
+  request.auth?.role === 'SYSTEM_ADMIN'
+    ? {}
+    : {
+        entrepreneurAssignments: {
+          some: { expertId: request.auth!.userId, active: true },
+        },
+      };
+
+const assertEntrepreneurAccess = async (request: AuthenticatedRequest, entrepreneurId: string) => {
+  if (request.auth?.role === 'SYSTEM_ADMIN') return;
+  const assignment = await prisma.expertAssignment.findFirst({
+    where: { expertId: request.auth!.userId, entrepreneurId, active: true },
+    select: { id: true },
+  });
+  if (!assignment)
+    throw new AuthError(
+      'EXPERT_ASSIGNMENT_REQUIRED',
+      'This entrepreneur is not assigned to your Expert workspace.',
+      403,
+    );
 };
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
@@ -92,13 +125,13 @@ const protectDomainMinimum = async (questionId: string) => {
   return question;
 };
 
-router.use(authenticate);
+router.use(authenticate, requireActiveAccount);
 router.use(async (request: AuthenticatedRequest, _response, next) => {
   try {
-    adminIdFor(request);
-    if (request.auth?.role === 'ADMIN') {
+    const userId = adminIdFor(request);
+    if (request.auth?.role !== 'SYSTEM_ADMIN') {
       const profile = await prisma.expertProfile.findUnique({
-        where: { userId: request.auth.userId },
+        where: { userId },
         select: { approvalStatus: true },
       });
       if (profile?.approvalStatus !== 'APPROVED')
@@ -117,12 +150,18 @@ router.use(async (request: AuthenticatedRequest, _response, next) => {
 router.get('/overview', async (request: AuthenticatedRequest, response, next) => {
   try {
     adminIdFor(request);
+    const userWhere = { role: 'ENTREPRENEUR' as const, ...assignedEntrepreneurWhere(request) };
     const [entrepreneurs, businesses, submitted, reviewed, average] = await Promise.all([
-      prisma.user.count({ where: { role: 'ENTREPRENEUR', status: 'ACTIVE' } }),
-      prisma.business.count(),
-      prisma.assessmentSession.count({ where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } } }),
-      prisma.assessmentSession.count({ where: { status: 'REVIEWED' } }),
-      prisma.assessmentResult.aggregate({ _avg: { overallScore: true } }),
+      prisma.user.count({ where: { ...userWhere, status: 'ACTIVE' } }),
+      prisma.business.count({ where: { user: userWhere, archivedAt: null } }),
+      prisma.assessmentSession.count({
+        where: { user: userWhere, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } },
+      }),
+      prisma.assessmentSession.count({ where: { user: userWhere, status: 'REVIEWED' } }),
+      prisma.assessmentResult.aggregate({
+        where: { session: { user: userWhere } },
+        _avg: { overallScore: true },
+      }),
     ]);
     response.json({
       success: true,
@@ -143,28 +182,47 @@ router.get('/entrepreneurs', async (request: AuthenticatedRequest, response, nex
   try {
     adminIdFor(request);
     const search = typeof request.query.search === 'string' ? request.query.search.trim() : '';
-    const users = await prisma.user.findMany({
-      where: {
-        role: 'ENTREPRENEUR',
-        ...(search
-          ? {
-              OR: [
-                { fullName: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
-                { phone: { contains: search } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        entrepreneurProfile: true,
-        businesses: { orderBy: { createdAt: 'desc' }, include: { sector: true } },
-        assessmentSessions: { orderBy: { createdAt: 'desc' }, take: 1, include: { result: true } },
-      },
+    const { page, limit } = parse(paginationSchema, request.query);
+    const where: Prisma.UserWhereInput = {
+      role: 'ENTREPRENEUR',
+      ...assignedEntrepreneurWhere(request),
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search } },
+            ],
+          }
+        : {}),
+    };
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          entrepreneurProfile: true,
+          businesses: {
+            where: { archivedAt: null },
+            orderBy: { createdAt: 'desc' },
+            include: { sector: true },
+          },
+          assessmentSessions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            include: { result: true },
+          },
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
+    response.json({
+      success: true,
+      data: users,
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
-    response.json({ success: true, data: users });
   } catch (error) {
     next(error);
   }
@@ -174,10 +232,17 @@ router.get('/entrepreneurs/:userId', async (request: AuthenticatedRequest, respo
   try {
     adminIdFor(request);
     const user = await prisma.user.findFirst({
-      where: { id: String(request.params.userId), role: 'ENTREPRENEUR' },
+      where: {
+        id: String(request.params.userId),
+        role: 'ENTREPRENEUR',
+        ...assignedEntrepreneurWhere(request),
+      },
       include: {
         entrepreneurProfile: true,
-        businesses: { include: { sector: true, classifications: true } },
+        businesses: {
+          where: { archivedAt: null },
+          include: { sector: true, classifications: true },
+        },
         assessmentSessions: {
           orderBy: { createdAt: 'desc' },
           include: { result: true, responses: { include: { question: true } } },
@@ -191,6 +256,10 @@ router.get('/entrepreneurs/:userId', async (request: AuthenticatedRequest, respo
           include: {
             admin: { select: { fullName: true } },
             business: { select: { id: true, name: true } },
+            replies: {
+              orderBy: { createdAt: 'asc' },
+              include: { author: { select: { id: true, fullName: true, role: true } } },
+            },
           },
         },
       },
@@ -209,6 +278,7 @@ router.post(
       const adminId = adminIdFor(request);
       const input = parse(feedbackSchema, request.body);
       const entrepreneurId = String(request.params.userId);
+      await assertEntrepreneurAccess(request, entrepreneurId);
       const entrepreneur = await prisma.user.findFirst({
         where: { id: entrepreneurId, role: 'ENTREPRENEUR' },
       });
@@ -237,6 +307,13 @@ router.post(
         });
         return created;
       });
+      void notificationService.create({
+        userId: entrepreneurId,
+        type: 'EXPERT_FEEDBACK',
+        title: 'New Expert feedback',
+        message: 'An Expert added feedback to one of your innovations.',
+        href: '/app/feedback',
+      });
       response.status(201).json({ success: true, data: feedback });
     } catch (error) {
       next(error);
@@ -251,6 +328,7 @@ router.post(
       const adminId = adminIdFor(request);
       const input = parse(recommendationSchema, request.body);
       const entrepreneurId = String(request.params.userId);
+      await assertEntrepreneurAccess(request, entrepreneurId);
       const business = await prisma.business.findFirst({
         where: { id: input.businessId, userId: entrepreneurId },
       });
@@ -286,7 +364,44 @@ router.post(
         });
         return created;
       });
+      void notificationService.create({
+        userId: entrepreneurId,
+        type: 'EXPERT_RECOMMENDATION',
+        title: 'New Expert recommendation',
+        message: recommendation.title,
+        href: '/app/recommendations',
+      });
       response.status(201).json({ success: true, data: recommendation });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/feedback/:feedbackId/replies',
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const expertId = adminIdFor(request);
+      const input = parse(z.object({ message: z.string().trim().min(2).max(2000) }), request.body);
+      const feedback = await prisma.adminFeedback.findUnique({
+        where: { id: String(request.params.feedbackId) },
+        select: { id: true, entrepreneurId: true },
+      });
+      if (!feedback) throw new AuthError('FEEDBACK_NOT_FOUND', 'Feedback thread not found.', 404);
+      await assertEntrepreneurAccess(request, feedback.entrepreneurId);
+      const reply = await prisma.feedbackReply.create({
+        data: { feedbackId: feedback.id, authorId: expertId, message: input.message },
+        include: { author: { select: { id: true, fullName: true, role: true } } },
+      });
+      void notificationService.create({
+        userId: feedback.entrepreneurId,
+        type: 'FEEDBACK_REPLY',
+        title: 'New reply from your Expert',
+        message: input.message,
+        href: '/app/feedback',
+      });
+      response.status(201).json({ success: true, data: reply });
     } catch (error) {
       next(error);
     }
@@ -296,17 +411,32 @@ router.post(
 router.get('/assessments', async (request: AuthenticatedRequest, response, next) => {
   try {
     adminIdFor(request);
-    const sessions = await prisma.assessmentSession.findMany({
-      where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW', 'REVIEWED'] } },
-      orderBy: { submittedAt: 'desc' },
-      take: 100,
-      include: {
-        user: { select: { id: true, fullName: true, email: true, phone: true } },
-        business: { include: { sector: true } },
-        result: true,
+    const { page, limit } = parse(paginationSchema, request.query);
+    const where: Prisma.AssessmentSessionWhereInput = {
+      user: { role: 'ENTREPRENEUR', ...assignedEntrepreneurWhere(request) },
+      status: {
+        in: [AssessmentStatus.SUBMITTED, AssessmentStatus.UNDER_REVIEW, AssessmentStatus.REVIEWED],
       },
+    };
+    const [sessions, total] = await Promise.all([
+      prisma.assessmentSession.findMany({
+        where,
+        orderBy: { submittedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { id: true, fullName: true, email: true, phone: true } },
+          business: { include: { sector: true } },
+          result: true,
+        },
+      }),
+      prisma.assessmentSession.count({ where }),
+    ]);
+    response.json({
+      success: true,
+      data: sessions,
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
-    response.json({ success: true, data: sessions });
   } catch (error) {
     next(error);
   }
@@ -319,6 +449,12 @@ router.patch(
       const adminId = adminIdFor(request);
       const input = parse(reviewSchema, request.body);
       const sessionId = String(request.params.sessionId);
+      const existing = await prisma.assessmentSession.findUnique({
+        where: { id: sessionId },
+        select: { userId: true },
+      });
+      if (!existing) throw new AuthError('ASSESSMENT_NOT_FOUND', 'Assessment not found.', 404);
+      await assertEntrepreneurAccess(request, existing.userId);
       const session = await prisma.assessmentSession.update({
         where: { id: sessionId },
         data: { status: input.status },
@@ -402,7 +538,7 @@ router.post('/questions', async (request: AuthenticatedRequest, response, next) 
 
 router.patch('/questions/:questionId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = adminIdFor(request);
+    const adminId = systemIdFor(request);
     const input = parse(questionSchema.partial(), request.body);
     if (input.active === false) await protectDomainMinimum(String(request.params.questionId));
     const question = await prisma.question.update({
@@ -426,7 +562,7 @@ router.patch('/questions/:questionId', async (request: AuthenticatedRequest, res
 
 router.delete('/questions/:questionId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = adminIdFor(request);
+    const adminId = systemIdFor(request);
     const questionId = String(request.params.questionId);
     const question = await prisma.question.findUnique({
       where: { id: questionId },
@@ -486,7 +622,7 @@ router.get('/configuration', async (request: AuthenticatedRequest, response, nex
 
 router.patch('/sectors/:sectorId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = adminIdFor(request);
+    const adminId = systemIdFor(request);
     const input = parse(sectorSchema.partial(), request.body);
     const sector = await prisma.sector.update({
       where: { id: String(request.params.sectorId) },
@@ -509,7 +645,7 @@ router.patch('/sectors/:sectorId', async (request: AuthenticatedRequest, respons
 
 router.patch('/domains/:domainId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = adminIdFor(request);
+    const adminId = systemIdFor(request);
     const input = parse(domainSchema.partial(), request.body);
     const domain = await prisma.assessmentDomain.update({
       where: { id: String(request.params.domainId) },
@@ -532,7 +668,7 @@ router.patch('/domains/:domainId', async (request: AuthenticatedRequest, respons
 
 router.get('/reports/assessments.csv', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = adminIdFor(request);
+    const adminId = systemIdFor(request);
     const results = await prisma.assessmentResult.findMany({
       orderBy: { createdAt: 'desc' },
       include: { session: { include: { user: true, business: { include: { sector: true } } } } },
