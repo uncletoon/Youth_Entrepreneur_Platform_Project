@@ -22,10 +22,11 @@ are also hashed at rest, expire, and are single use. Account contact verificatio
 
 Entrepreneurs can access only their own profiles, businesses, assessments, results, feedback, and
 recommendations. Approved Experts can access only Entrepreneurs actively assigned to them and can
-add assessment questions from their subject expertise. System Administrators approve Experts,
-create assignments, manage users and roles, edit or remove assessment content, manage
-configuration, export reports, and view the complete audit log. Each request refreshes role and
-account status from PostgreSQL so disabling an account takes effect immediately.
+create, edit, archive, or remove only their own supplemental domains and questions. System
+Administrators approve Experts, create assignments, manage users and roles, own CRUD access to the
+mandatory questions and scoring classes, oversee supplemental questions, manage configuration,
+export reports, and view the complete audit log. Each request refreshes role and account status
+from PostgreSQL so disabling an account takes effect immediately.
 
 Expert approval is a separate workflow from account registration. Expert profiles move from Draft
 to Pending only after the professional form is submitted. Pending applications are read-only for
@@ -38,11 +39,23 @@ notification.
 
 ## Assessment pipeline
 
-Question routing combines active core questions with the entrepreneur's classified sector and
-business stage. Responses are autosaved by session. Submission calculates weighted domain scores,
-readiness level, risk level, strengths, gaps, and recommendations in one database transaction.
-Rules and results retain version identifiers and always include a non-guarantee disclaimer. The
-current result is an explainable readiness-risk estimate, not a trained success-prediction model.
+The mandatory framework contains five active classes with ten questions each. Every class
+contributes 20%, producing a 50-question core readiness score of 100%. Experts create separate
+supplemental domains containing 5-10 equally weighted questions and select one or more applicable
+innovation sectors. The server generates internal codes and display order. An Expert domain stays
+in Draft below five active questions and becomes routable automatically at question five; question
+eleven is rejected. The 10-slot Expert editor saves 5-10 questions as one transaction and applies
+one shared sector selection to every question in that set. Question routing combines the mandatory framework with complete Expert domains
+matching the innovation's sector. Responses are autosaved by session. Submission calculates the
+mandatory class scores, overall readiness, risk, strengths, gaps, recommendations, and separate
+equal-weight Expert-domain percentages in one database transaction. Supplemental percentages never alter the mandatory
+readiness score. Rules and results retain version identifiers and always include a non-guarantee
+disclaimer. The current result is an explainable readiness-risk estimate, not a trained
+success-prediction model.
+
+Only one Draft or In Progress assessment session may exist per business. Reopening an unfinished
+assessment returns that same session and its saved responses; the web application resumes at the
+first incomplete class instead of creating or displaying a second attempt.
 
 ## Deployment
 

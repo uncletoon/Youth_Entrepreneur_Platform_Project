@@ -8,7 +8,11 @@ interface Question {
   id: string;
   prompt: string;
   helpText?: string;
-  domain: { name: string };
+  source: 'SYSTEM_MANDATORY' | 'EXPERT_SUPPLEMENTAL';
+  sector: { name: string } | null;
+  sectors: { sector: { name: string } }[];
+  createdBy: { fullName: string } | null;
+  domain: { id: string; name: string };
 }
 interface AssessmentData {
   session: { id: string };
@@ -17,7 +21,9 @@ interface AssessmentData {
 }
 
 interface DomainGroup {
+  id: string;
   name: string;
+  source: Question['source'];
   questions: Question[];
 }
 
@@ -42,10 +48,19 @@ export const AssessmentPage = () => {
       .startAssessment(accessToken, businessId)
       .then((loaded) => {
         const value = loaded as AssessmentData;
-        setData(value);
-        setAnswers(
-          Object.fromEntries(value.responses.map((item) => [item.questionId, Number(item.answer)])),
+        const restoredAnswers = Object.fromEntries(
+          value.responses.map((item) => [item.questionId, Number(item.answer)]),
         );
+        setData(value);
+        setAnswers(restoredAnswers);
+        const domainIds = [...new Set(value.questions.map((question) => question.domain.id))];
+        const firstIncompleteDomain = domainIds.findIndex((domainId) =>
+          value.questions.some(
+            (question) =>
+              question.domain.id === domainId && restoredAnswers[question.id] === undefined,
+          ),
+        );
+        setCurrentDomainIndex(firstIncompleteDomain >= 0 ? firstIncompleteDomain : 0);
       })
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : 'Could not start assessment.'),
@@ -73,11 +88,16 @@ export const AssessmentPage = () => {
   // Group questions by domain
   const domains: DomainGroup[] = data
     ? data.questions.reduce<DomainGroup[]>((groups, question) => {
-        const existing = groups.find((g) => g.name === question.domain.name);
+        const existing = groups.find((group) => group.id === question.domain.id);
         if (existing) {
           existing.questions.push(question);
         } else {
-          groups.push({ name: question.domain.name, questions: [question] });
+          groups.push({
+            id: question.domain.id,
+            name: question.domain.name,
+            source: question.source,
+            questions: [question],
+          });
         }
         return groups;
       }, [])
@@ -181,7 +201,7 @@ export const AssessmentPage = () => {
           <div className="domain-stepper">
             {domains.map((domain, index) => (
               <button
-                key={domain.name}
+                key={domain.id}
                 type="button"
                 className={`domain-step ${index === currentDomainIndex ? 'active' : ''} ${isDomainComplete(domain) ? 'complete' : ''}`}
                 onClick={() => {
@@ -207,11 +227,16 @@ export const AssessmentPage = () => {
             <div className="workflow-card domain-question-block">
               <div className="domain-question-header">
                 <div>
-                  <span className="eyebrow">{`Domain ${currentDomainIndex + 1} of ${totalDomains}`}</span>
+                  <span className="eyebrow">
+                    {currentDomain.source === 'SYSTEM_MANDATORY'
+                      ? `Mandatory class ${currentDomainIndex + 1} of ${totalDomains}`
+                      : `Expert supplemental domain ${currentDomainIndex + 1} of ${totalDomains}`}
+                  </span>
                   <h2>{currentDomain.name}</h2>
                   <p>
-                    Choose the answer that honestly reflects your position today. Your result is
-                    explainable and can be improved over time.
+                    {currentDomain.source === 'SYSTEM_MANDATORY'
+                      ? 'Choose the answer that honestly reflects your position today. Your result is explainable and can be improved over time.'
+                      : 'These specialist questions produce a separate Expert percentage and do not change your mandatory readiness score.'}
                   </p>
                 </div>
                 <div className="domain-completion-badge">
@@ -225,9 +250,18 @@ export const AssessmentPage = () => {
               {currentDomain.questions.map((question, index) => (
                 <fieldset key={question.id} className={answers[question.id] ? 'answered' : ''}>
                   <legend>
-                    <small>{currentDomain.name}</small>
-                    {index + 1}. {question.prompt}
+                    <span className="question-title">
+                      {index + 1}. {question.prompt}
+                    </span>
                   </legend>
+                  {question.source === 'EXPERT_SUPPLEMENTAL' ? (
+                    <p className="question-context">
+                      Expert supplemental question
+                      {question.sectors.length
+                        ? ` · ${question.sectors.map((item) => item.sector.name).join(', ')}`
+                        : ''}
+                    </p>
+                  ) : null}
                   {question.helpText && <p className="question-help-text">{question.helpText}</p>}
                   <div className="rating-options">
                     {RATING_LABELS.map((label, option) => {

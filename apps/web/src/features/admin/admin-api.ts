@@ -36,14 +36,26 @@ export interface QuestionRow {
   prompt: string;
   helpText: string | null;
   scope: string;
+  source: 'SYSTEM_MANDATORY' | 'EXPERT_SUPPLEMENTAL' | 'LEGACY_ARCHIVED';
+  createdById: string | null;
+  expertiseField: string | null;
   type: string;
   active: boolean;
   required: boolean;
   weight: number;
   stage: string | null;
   displayOrder: number;
-  domain: { id: string; code: string; name: string; displayOrder: number };
+  domain: {
+    id: string;
+    code: string;
+    name: string;
+    displayOrder: number;
+    active: boolean;
+    source: 'SYSTEM_MANDATORY' | 'EXPERT_SUPPLEMENTAL' | 'LEGACY_ARCHIVED';
+  };
   sector: { id: string; name: string } | null;
+  sectors: { sector: { id: string; name: string } }[];
+  createdBy: { id: string; fullName: string } | null;
 }
 export interface SectorRow {
   id: string;
@@ -60,6 +72,11 @@ export interface DomainRow {
   description: string;
   weight: number;
   displayOrder: number;
+  active: boolean;
+  source: 'SYSTEM_MANDATORY' | 'EXPERT_SUPPLEMENTAL' | 'LEGACY_ARCHIVED';
+  createdById: string | null;
+  expertiseField: string | null;
+  createdBy: { id: string; fullName: string } | null;
   _count: { questions: number };
 }
 export interface AdminConfiguration {
@@ -245,6 +262,13 @@ export const adminApi = {
     ),
   createQuestion: (token: string, input: unknown) =>
     apiRequest<QuestionRow>('/admin/questions', mutation(token, 'POST', input)),
+  saveQuestionSet: (token: string, domainId: string, input: unknown) =>
+    apiRequest<{
+      domainId: string;
+      questionCount: number;
+      active: boolean;
+      questions: QuestionRow[];
+    }>(`/admin/domains/${domainId}/question-set`, mutation(token, 'PUT', input)),
   updateQuestion: (token: string, questionId: string, input: unknown) =>
     apiRequest<QuestionRow>(`/admin/questions/${questionId}`, mutation(token, 'PATCH', input)),
   deleteQuestion: (token: string, questionId: string) =>
@@ -256,6 +280,13 @@ export const adminApi = {
     apiRequest<SectorRow>(`/admin/sectors/${sectorId}`, mutation(token, 'PATCH', input)),
   updateDomain: (token: string, domainId: string, input: unknown) =>
     apiRequest<DomainRow>(`/admin/domains/${domainId}`, mutation(token, 'PATCH', input)),
+  createDomain: (token: string, input: unknown) =>
+    apiRequest<DomainRow>('/admin/domains', mutation(token, 'POST', input)),
+  deleteDomain: (token: string, domainId: string) =>
+    apiRequest<{ deleted: boolean }>(
+      `/admin/domains/${domainId}`,
+      auth(token, { method: 'DELETE' }),
+    ),
   users: (token: string, page = 1) =>
     apiRequestWithMeta<SystemUserRow[]>(`/system/users?page=${page}`, auth(token)),
   updateUser: (token: string, userId: string, input: unknown) =>

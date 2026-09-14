@@ -55,6 +55,27 @@ export const ResultPage = ({ sessionId }: { sessionId: string }) => {
             </div>
           ))}
         </article>
+        {data.result.supplementalScores.length ? (
+          <article className="workflow-card">
+            <h2>Expert field percentages</h2>
+            <p>
+              These sector-specific percentages are calculated separately and do not change the
+              mandatory readiness score.
+            </p>
+            {data.result.supplementalScores.map((score) => (
+              <div className="domain-score" key={`${score.name}-${score.sector}`}>
+                <span>
+                  {score.name} · {score.sector}
+                </span>
+                <strong>{score.score}%</strong>
+                <i>
+                  <b style={{ width: `${score.score}%` }} />
+                </i>
+                <small>{score.questionCount} Expert questions</small>
+              </div>
+            ))}
+          </article>
+        ) : null}
         <article className="workflow-card">
           <h2>
             <CheckCircle2 /> Strengths

@@ -248,7 +248,9 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
   // Domain question counts by domain for overview
   const domainHealth = configuration.domains.map((domain) => ({
     ...domain,
-    activeCount: questions.filter((q) => q.domain.id === domain.id && q.active).length,
+    activeCount: questions.filter(
+      (q) => q.domain.id === domain.id && q.active && q.source === 'SYSTEM_MANDATORY',
+    ).length,
   }));
 
   return (
@@ -651,8 +653,9 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   <span className="eyebrow">Assessment content</span>
                   <h1>Question bank</h1>
                   <p>
-                    Browse, filter, edit, archive, or delete assessment questions. Every domain must
-                    maintain at least five active core questions.
+                    {isSystem
+                      ? 'Manage the official 50 mandatory questions and all Expert supplemental questions. Each mandatory class keeps ten core questions.'
+                      : 'Review the mandatory framework and manage the supplemental questions you add for your field and innovation sectors.'}
                   </p>
                 </div>
                 <Link className="primary-action admin-export-btn" to="/admin/questions/new">
@@ -670,8 +673,16 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   <strong>{questions.filter((q) => q.active).length}</strong>
                 </article>
                 <article>
-                  <span>Core scope</span>
-                  <strong>{questions.filter((q) => q.scope === 'CORE').length}</strong>
+                  <span>Mandatory</span>
+                  <strong>
+                    {questions.filter((q) => q.source === 'SYSTEM_MANDATORY' && q.active).length}
+                  </strong>
+                </article>
+                <article>
+                  <span>Expert supplemental</span>
+                  <strong>
+                    {questions.filter((q) => q.source === 'EXPERT_SUPPLEMENTAL' && q.active).length}
+                  </strong>
                 </article>
                 <article>
                   <span>Domains</span>
@@ -716,7 +727,8 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                       <th>Code</th>
                       <th>Question</th>
                       <th>Domain</th>
-                      <th>Scope</th>
+                      <th>Category</th>
+                      <th>Field</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
@@ -724,7 +736,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   <tbody>
                     {filteredQuestions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="table-empty">
+                        <td colSpan={7} className="table-empty">
                           No questions match your search.
                         </td>
                       </tr>
@@ -738,17 +750,36 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                           <td className="question-prompt-cell">{question.prompt}</td>
                           <td>{question.domain.name}</td>
                           <td>
-                            <span className="scope-badge">{question.scope}</span>
+                            <span className="scope-badge">
+                              {question.source === 'SYSTEM_MANDATORY'
+                                ? 'Mandatory'
+                                : 'Expert supplemental'}
+                            </span>
+                          </td>
+                          <td>
+                            {question.source === 'EXPERT_SUPPLEMENTAL'
+                              ? question.sectors.map((item) => item.sector.name).join(', ') ||
+                                question.expertiseField ||
+                                'Sector specific'
+                              : 'All innovations'}
                           </td>
                           <td>
                             <span
-                              className={`status-pill ${question.active ? 'status-pill--success' : ''}`}
+                              className={`status-pill ${question.active && question.domain.active ? 'status-pill--success' : ''}`}
                             >
-                              {question.active ? 'Active' : 'Archived'}
+                              {question.source === 'EXPERT_SUPPLEMENTAL' &&
+                              question.active &&
+                              !question.domain.active
+                                ? 'Draft set'
+                                : question.active
+                                  ? 'Active'
+                                  : 'Archived'}
                             </span>
                           </td>
                           <td className="table-actions">
-                            {isSystem ? (
+                            {isSystem ||
+                            (question.source === 'EXPERT_SUPPLEMENTAL' &&
+                              question.createdById === user?.id) ? (
                               <>
                                 <Link
                                   to={`/admin/questions/${question.id}/edit`}
@@ -824,8 +855,8 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
           {tab === 'configuration' ? (
             <>
               <Heading
-                title="Sector & scoring configuration"
-                subtitle="Review the current setup, then click Modify to open a focused editor for any item."
+                title="Mandatory classes & sector configuration"
+                subtitle="The official framework uses five mandatory classes worth 20% each. Only the System Administrator can change them."
               />
 
               <section className="configuration-section">
@@ -833,11 +864,67 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                   <div>
                     <h2>Readiness domains</h2>
                     <p>
-                      Weights influence the final readiness score. Each domain must keep at least
-                      five active core questions.
+                      Each mandatory class contributes 20% of the core readiness score and must keep
+                      ten active mandatory questions.
                     </p>
                   </div>
                 </div>
+                <form
+                  className="admin-panel assignment-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const data = new FormData(form);
+                    void run(
+                      () =>
+                        adminApi.createDomain(accessToken as string, {
+                          code: String(data.get('code')).trim().toUpperCase().replace(/\s+/g, '_'),
+                          name: String(data.get('name')),
+                          description: String(data.get('description')),
+                          weight: Number(data.get('weight')),
+                          displayOrder: Number(data.get('displayOrder')),
+                          active: true,
+                        }),
+                      'Readiness class created.',
+                    ).then(() => form.reset());
+                  }}
+                >
+                  <div>
+                    <span className="eyebrow">Create class</span>
+                    <h2>Add a readiness class</h2>
+                    <p>New classes affect scoring only after mandatory questions are assigned.</p>
+                  </div>
+                  <label>
+                    Code
+                    <input name="code" placeholder="OPERATIONS" minLength={2} required />
+                  </label>
+                  <label>
+                    Name
+                    <input name="name" minLength={2} required />
+                  </label>
+                  <label>
+                    Description
+                    <input name="description" minLength={5} required />
+                  </label>
+                  <label>
+                    Weight (%)
+                    <input
+                      name="weight"
+                      type="number"
+                      min="1"
+                      max="100"
+                      defaultValue="20"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Order
+                    <input name="displayOrder" type="number" min="1" required />
+                  </label>
+                  <button className="primary-action" type="submit">
+                    <Plus /> Add class
+                  </button>
+                </form>
                 <div className="admin-table-wrap">
                   <table>
                     <thead>
@@ -851,40 +938,62 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                       </tr>
                     </thead>
                     <tbody>
-                      {configuration.domains.map((domain) => (
-                        <tr key={domain.id}>
-                          <td>{domain.displayOrder}</td>
-                          <td>
-                            <strong>{domain.name}</strong>
-                            <small>{domain.code}</small>
-                          </td>
-                          <td>
-                            <span className="weight-badge">{domain.weight}%</span>
-                          </td>
-                          <td>
-                            <span
-                              className={
-                                domain._count.questions >= 5 ? 'count-good' : 'count-warning'
-                              }
-                            >
-                              {domain._count.questions} questions
-                              {domain._count.questions < 5 && ' Minimum not met'}
-                            </span>
-                          </td>
-                          <td>{domain.description}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="modify-btn"
-                              onClick={() =>
-                                setConfigurationEditor({ kind: 'domain', item: domain })
-                              }
-                            >
-                              <Edit3 /> Modify
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {configuration.domains
+                        .filter((domain) => domain.source === 'SYSTEM_MANDATORY')
+                        .map((domain) => (
+                          <tr key={domain.id}>
+                            <td>{domain.displayOrder}</td>
+                            <td>
+                              <strong>{domain.name}</strong>
+                              <small>{domain.code}</small>
+                            </td>
+                            <td>
+                              <span className="weight-badge">{domain.weight}%</span>
+                            </td>
+                            <td>
+                              <span
+                                className={
+                                  domain._count.questions >= 10 ? 'count-good' : 'count-warning'
+                                }
+                              >
+                                {domain._count.questions} questions
+                                {domain._count.questions < 10 && ' Minimum not met'}
+                              </span>
+                            </td>
+                            <td>{domain.description}</td>
+                            <td>
+                              <div className="table-actions">
+                                <button
+                                  type="button"
+                                  className="modify-btn"
+                                  onClick={() =>
+                                    setConfigurationEditor({ kind: 'domain', item: domain })
+                                  }
+                                >
+                                  <Edit3 /> Modify
+                                </button>
+                                <button
+                                  type="button"
+                                  className="table-action-icon danger-action"
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `Remove ${domain.name}? Classes with mandatory questions are protected.`,
+                                      )
+                                    )
+                                      void run(
+                                        () =>
+                                          adminApi.deleteDomain(accessToken as string, domain.id),
+                                        'Readiness class removed.',
+                                      );
+                                  }}
+                                >
+                                  <Trash2 /> Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -978,6 +1087,7 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                               weight: Number(data.get('weight')),
                               displayOrder: Number(data.get('displayOrder')),
                               description: String(data.get('description')),
+                              active: data.get('active') === 'on',
                             }),
                           'Domain configuration updated.',
                         );
@@ -1040,6 +1150,14 @@ export const AdminDashboardPage = ({ section = 'overview' }: { section?: AdminSe
                               defaultValue={configurationEditor.item.displayOrder}
                               required
                             />
+                          </label>
+                          <label className="inline-check">
+                            <input
+                              name="active"
+                              type="checkbox"
+                              defaultChecked={configurationEditor.item.active}
+                            />
+                            Active class
                           </label>
                         </>
                       ) : null}

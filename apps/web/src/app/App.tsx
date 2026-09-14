@@ -121,7 +121,7 @@ export const App = () => {
 
     const editQuestionMatch = path.match(/^\/admin\/questions\/([0-9a-f-]+)\/edit$/i);
     const editQuestionId = editQuestionMatch?.[1];
-    if (editQuestionId) page = systemPage(<AdminQuestionFormPage questionId={editQuestionId} />);
+    if (editQuestionId) page = adminPage(<AdminQuestionFormPage questionId={editQuestionId} />);
   }
 
   return <Suspense fallback={<div className="app-loading">Loading YERSPS…</div>}>{page}</Suspense>;

@@ -93,17 +93,205 @@ const sectors = [
 ] as const;
 
 const domains = [
-  ['MINDSET', 'Entrepreneurial Mindset and Personal Readiness', 10],
-  ['OPPORTUNITY', 'Opportunity Identification and Value Proposition', 10],
-  ['MARKET', 'Market and Marketing Readiness', 12],
-  ['FINANCE', 'Financial Readiness', 15],
-  ['MODEL', 'Business Model and Planning', 10],
-  ['OPERATIONS', 'Operations and Resource Management', 10],
-  ['INNOVATION', 'Innovation Capability', 10],
-  ['DIGITAL', 'Digital Readiness', 8],
-  ['LEADERSHIP', 'Leadership, Team and Networking', 7],
-  ['RISK', 'Risk, Legal and Sustainability Readiness', 8],
+  [
+    'ECL',
+    'Entrepreneurial Competence & Leadership',
+    'Knowledge, management, decision-making and entrepreneurial confidence',
+    20,
+  ],
+  ['FINANCE', 'Financial Readiness', 'Financial resources and financial management', 20],
+  [
+    'MARKET',
+    'Market & Customer Readiness',
+    'Market research, customers, competition and marketing',
+    20,
+  ],
+  [
+    'INNOVATION',
+    'Innovation, Digital & Adaptability',
+    'Technology, innovation and ability to respond to change',
+    20,
+  ],
+  [
+    'RISK',
+    'Risk, Planning & Business Sustainability',
+    'Risk management, strategic planning, resilience and success',
+    20,
+  ],
 ] as const;
+
+const mandatoryQuestions = [
+  [
+    'MANDATORY_ECL_01',
+    'ECL',
+    'I understand the fundamental principles of starting and managing a business.',
+  ],
+  ['MANDATORY_ECL_02', 'ECL', 'I can identify and evaluate a viable business opportunity.'],
+  [
+    'MANDATORY_ECL_03',
+    'ECL',
+    'I understand how to determine the costs, pricing and profitability of my business.',
+  ],
+  [
+    'MANDATORY_ECL_04',
+    'ECL',
+    'I understand the legal and regulatory requirements relevant to my business.',
+  ],
+  [
+    'MANDATORY_ECL_05',
+    'ECL',
+    'I can make important business decisions within a reasonable amount of time.',
+  ],
+  ['MANDATORY_ECL_06', 'ECL', 'I can effectively organize and prioritize business activities.'],
+  [
+    'MANDATORY_ECL_07',
+    'ECL',
+    'I can communicate my business goals effectively to employees or business partners.',
+  ],
+  ['MANDATORY_ECL_08', 'ECL', 'I can solve problems that arise during business operations.'],
+  ['MANDATORY_ECL_09', 'ECL', 'I am confident in my ability to manage my business successfully.'],
+  [
+    'MANDATORY_ECL_10',
+    'ECL',
+    'I can take responsibility for the outcomes of my business decisions.',
+  ],
+  [
+    'MANDATORY_FINANCE_01',
+    'FINANCE',
+    'I have sufficient financial resources to start or continue operating my business.',
+  ],
+  [
+    'MANDATORY_FINANCE_02',
+    'FINANCE',
+    'I have accurately estimated the capital required for my business.',
+  ],
+  [
+    'MANDATORY_FINANCE_03',
+    'FINANCE',
+    'I have a clear plan for obtaining additional financing when necessary.',
+  ],
+  ['MANDATORY_FINANCE_04', 'FINANCE', 'I separate my personal finances from my business finances.'],
+  ['MANDATORY_FINANCE_05', 'FINANCE', 'I regularly record my business income and expenses.'],
+  ['MANDATORY_FINANCE_06', 'FINANCE', 'I prepare and monitor a budget for my business.'],
+  ['MANDATORY_FINANCE_07', 'FINANCE', 'I understand the cash-flow position of my business.'],
+  [
+    'MANDATORY_FINANCE_08',
+    'FINANCE',
+    'I can determine whether my business is making a profit or loss.',
+  ],
+  [
+    'MANDATORY_FINANCE_09',
+    'FINANCE',
+    'I can manage unexpected financial expenses without seriously disrupting my business.',
+  ],
+  [
+    'MANDATORY_FINANCE_10',
+    'FINANCE',
+    'I have sufficient working capital to support my business operations.',
+  ],
+  ['MANDATORY_MARKET_01', 'MARKET', 'I have clearly identified my target customers.'],
+  [
+    'MANDATORY_MARKET_02',
+    'MARKET',
+    'I understand the main needs and problems of my target customers.',
+  ],
+  [
+    'MANDATORY_MARKET_03',
+    'MARKET',
+    'I have conducted research to determine whether customers need my product or service.',
+  ],
+  ['MANDATORY_MARKET_04', 'MARKET', 'I understand the size and potential of my target market.'],
+  ['MANDATORY_MARKET_05', 'MARKET', 'I know who my major competitors are.'],
+  ['MANDATORY_MARKET_06', 'MARKET', 'I understand the strengths and weaknesses of my competitors.'],
+  ['MANDATORY_MARKET_07', 'MARKET', 'My business has a clear competitive advantage.'],
+  ['MANDATORY_MARKET_08', 'MARKET', 'I regularly collect and use customer feedback.'],
+  [
+    'MANDATORY_MARKET_09',
+    'MARKET',
+    'I monitor changes in customer preferences and market conditions.',
+  ],
+  [
+    'MANDATORY_MARKET_10',
+    'MARKET',
+    'I have a clear strategy for attracting and retaining customers.',
+  ],
+  [
+    'MANDATORY_INNOVATION_01',
+    'INNOVATION',
+    'I can effectively use digital technologies for business activities.',
+  ],
+  ['MANDATORY_INNOVATION_02', 'INNOVATION', 'I use digital platforms to promote my business.'],
+  ['MANDATORY_INNOVATION_03', 'INNOVATION', 'I use digital tools to communicate with customers.'],
+  [
+    'MANDATORY_INNOVATION_04',
+    'INNOVATION',
+    'I use appropriate digital tools to manage business records or transactions.',
+  ],
+  [
+    'MANDATORY_INNOVATION_05',
+    'INNOVATION',
+    'I regularly look for ways to improve my products or services.',
+  ],
+  ['MANDATORY_INNOVATION_06', 'INNOVATION', 'I actively look for new business opportunities.'],
+  [
+    'MANDATORY_INNOVATION_07',
+    'INNOVATION',
+    'I am willing to introduce new products, services or processes when opportunities arise.',
+  ],
+  [
+    'MANDATORY_INNOVATION_08',
+    'INNOVATION',
+    'I use customer feedback to improve my products or services.',
+  ],
+  [
+    'MANDATORY_INNOVATION_09',
+    'INNOVATION',
+    'I can adapt my business when customer needs or market conditions change.',
+  ],
+  [
+    'MANDATORY_INNOVATION_10',
+    'INNOVATION',
+    'I am willing to learn and adopt new technologies or approaches that can improve my business.',
+  ],
+  ['MANDATORY_RISK_01', 'RISK', 'I have identified the major risks that could affect my business.'],
+  ['MANDATORY_RISK_02', 'RISK', 'I regularly assess the potential impact of business risks.'],
+  ['MANDATORY_RISK_03', 'RISK', 'I have strategies for reducing major business risks.'],
+  ['MANDATORY_RISK_04', 'RISK', 'I have a contingency plan for major business problems.'],
+  [
+    'MANDATORY_RISK_05',
+    'RISK',
+    'My business has clearly defined short-term and long-term objectives.',
+  ],
+  ['MANDATORY_RISK_06', 'RISK', 'I have a realistic plan for achieving my business objectives.'],
+  [
+    'MANDATORY_RISK_07',
+    'RISK',
+    'I regularly review my business performance against my objectives.',
+  ],
+  [
+    'MANDATORY_RISK_08',
+    'RISK',
+    'My business can continue operating when unexpected challenges occur.',
+  ],
+  [
+    'MANDATORY_RISK_09',
+    'RISK',
+    'My business has the potential to remain financially sustainable over the next three years.',
+  ],
+  [
+    'MANDATORY_RISK_10',
+    'RISK',
+    'Overall, I believe my business has strong potential for long-term success.',
+  ],
+] as const;
+
+const likertOptions = [
+  { label: 'Not yet', value: 1 },
+  { label: 'A little', value: 2 },
+  { label: 'Partly', value: 3 },
+  { label: 'Mostly', value: 4 },
+  { label: 'Confidently', value: 5 },
+];
 
 async function main() {
   for (const [code, name, description, keywords] of sectors) {
@@ -114,427 +302,66 @@ async function main() {
     });
   }
 
-  for (const [index, [code, name, weight]] of domains.entries()) {
-    await prisma.assessmentDomain.upsert({
+  const domainIds = new Map<string, string>();
+  for (const [index, [code, name, description, weight]] of domains.entries()) {
+    const domain = await prisma.assessmentDomain.upsert({
       where: { code },
-      update: { name, description: `${name} readiness domain`, weight, displayOrder: index + 1 },
-      create: {
-        code,
-        name,
-        description: `${name} readiness domain`,
-        weight,
-        displayOrder: index + 1,
-      },
+      update: { name, description, weight, displayOrder: index + 1, active: true },
+      create: { code, name, description, weight, displayOrder: index + 1, active: true },
     });
+    domainIds.set(code, domain.id);
   }
 
-  const questions = [
-    [
-      'CORE_MINDSET_01',
-      'MINDSET',
-      'I follow through on important business tasks even when they become difficult.',
-      1,
-    ],
-    [
-      'CORE_MARKET_01',
-      'MARKET',
-      'I have spoken directly with potential customers about their needs.',
-      2,
-    ],
-    [
-      'CORE_FINANCE_01',
-      'FINANCE',
-      'I can estimate my costs, selling price, and expected cash flow.',
-      3,
-    ],
-    ['CORE_MODEL_01', 'MODEL', 'I can clearly explain how the business will earn revenue.', 4],
-    [
-      'CORE_DIGITAL_01',
-      'DIGITAL',
-      'I can use appropriate digital tools to reach customers and manage the business.',
-      5,
-    ],
-    [
-      'CORE_RISK_01',
-      'RISK',
-      'I understand the main legal, operational, and market risks affecting the business.',
-      6,
-    ],
-    [
-      'CORE_MINDSET_02',
-      'MINDSET',
-      'I can dedicate consistent time and effort to building this business.',
-      7,
-    ],
-    [
-      'CORE_OPPORTUNITY_01',
-      'OPPORTUNITY',
-      'I can clearly describe the customer problem or opportunity I am addressing.',
-      8,
-    ],
-    [
-      'CORE_OPPORTUNITY_02',
-      'OPPORTUNITY',
-      'I have evidence that the problem is important enough for customers to act on.',
-      9,
-    ],
-    [
-      'CORE_MARKET_02',
-      'MARKET',
-      'I know how my offer differs from the alternatives customers already use.',
-      10,
-    ],
-    [
-      'CORE_FINANCE_02',
-      'FINANCE',
-      'I know how much capital I need and where it could come from.',
-      11,
-    ],
-    [
-      'CORE_MODEL_02',
-      'MODEL',
-      'I have identified the key partners and activities needed to deliver value.',
-      12,
-    ],
-    [
-      'CORE_OPERATIONS_01',
-      'OPERATIONS',
-      'I have identified the people, equipment, suppliers, and processes needed to operate.',
-      13,
-    ],
-    [
-      'CORE_OPERATIONS_02',
-      'OPERATIONS',
-      'I can define practical quality and delivery standards for the business.',
-      14,
-    ],
-    [
-      'CORE_INNOVATION_01',
-      'INNOVATION',
-      'I regularly test assumptions and improve the product or service using feedback.',
-      15,
-    ],
-    [
-      'CORE_INNOVATION_02',
-      'INNOVATION',
-      'I can adapt the business when customer needs or market conditions change.',
-      16,
-    ],
-    [
-      'CORE_DIGITAL_02',
-      'DIGITAL',
-      'I understand how to protect important business and customer information.',
-      17,
-    ],
-    [
-      'CORE_LEADERSHIP_01',
-      'LEADERSHIP',
-      'I can identify the skills that my team has and the skills still missing.',
-      18,
-    ],
-    [
-      'CORE_LEADERSHIP_02',
-      'LEADERSHIP',
-      'I have useful mentors, peers, partners, or professional networks I can approach.',
-      19,
-    ],
-    [
-      'CORE_RISK_02',
-      'RISK',
-      'I understand the registrations, permits, taxes, and sustainability duties relevant to the business.',
-      20,
-    ],
-    [
-      'CORE_MINDSET_03',
-      'MINDSET',
-      'I set measurable business goals and review my progress regularly.',
-      21,
-    ],
-    [
-      'CORE_MINDSET_04',
-      'MINDSET',
-      'I seek constructive feedback and use it to improve my decisions.',
-      22,
-    ],
-    [
-      'CORE_MINDSET_05',
-      'MINDSET',
-      'I can make responsible decisions when information is incomplete.',
-      23,
-    ],
-    [
-      'CORE_OPPORTUNITY_03',
-      'OPPORTUNITY',
-      'I can describe the specific value customers receive from my solution.',
-      24,
-    ],
-    [
-      'CORE_OPPORTUNITY_04',
-      'OPPORTUNITY',
-      'I have compared this opportunity with realistic alternative ideas.',
-      25,
-    ],
-    [
-      'CORE_OPPORTUNITY_05',
-      'OPPORTUNITY',
-      'I can explain why this is the right time to pursue this opportunity.',
-      26,
-    ],
-    [
-      'CORE_MARKET_03',
-      'MARKET',
-      'I have defined a specific group of customers to serve first.',
-      27,
-    ],
-    [
-      'CORE_MARKET_04',
-      'MARKET',
-      'I know how I will reach, communicate with, and retain customers.',
-      28,
-    ],
-    [
-      'CORE_MARKET_05',
-      'MARKET',
-      'I have tested whether customers are willing and able to pay.',
-      29,
-    ],
-    [
-      'CORE_FINANCE_03',
-      'FINANCE',
-      'I separate expected one-time startup costs from recurring operating costs.',
-      30,
-    ],
-    [
-      'CORE_FINANCE_04',
-      'FINANCE',
-      'I know the sales volume needed for the business to cover its costs.',
-      31,
-    ],
-    [
-      'CORE_FINANCE_05',
-      'FINANCE',
-      'I keep or plan to keep reliable financial records and supporting evidence.',
-      32,
-    ],
-    [
-      'CORE_MODEL_03',
-      'MODEL',
-      'I can describe the resources required to deliver the product or service.',
-      33,
-    ],
-    [
-      'CORE_MODEL_04',
-      'MODEL',
-      'I understand the most important assumptions in my business model.',
-      34,
-    ],
-    [
-      'CORE_MODEL_05',
-      'MODEL',
-      'I have a practical plan for testing and improving the business model.',
-      35,
-    ],
-    [
-      'CORE_OPERATIONS_03',
-      'OPERATIONS',
-      'I have identified dependable suppliers or alternative sources for key inputs.',
-      36,
-    ],
-    [
-      'CORE_OPERATIONS_04',
-      'OPERATIONS',
-      'I can estimate the time and capacity needed to meet expected demand.',
-      37,
-    ],
-    [
-      'CORE_OPERATIONS_05',
-      'OPERATIONS',
-      'I have a practical method for monitoring quality and customer complaints.',
-      38,
-    ],
-    [
-      'CORE_INNOVATION_03',
-      'INNOVATION',
-      'I collect evidence before making major changes to the solution.',
-      39,
-    ],
-    [
-      'CORE_INNOVATION_04',
-      'INNOVATION',
-      'I can protect or differentiate the knowledge, design, or process behind the idea.',
-      40,
-    ],
-    [
-      'CORE_INNOVATION_05',
-      'INNOVATION',
-      'I have a repeatable way to turn learning into product or service improvements.',
-      41,
-    ],
-    [
-      'CORE_DIGITAL_03',
-      'DIGITAL',
-      'I can select affordable digital tools that match the needs of the business.',
-      42,
-    ],
-    [
-      'CORE_DIGITAL_04',
-      'DIGITAL',
-      'I can use digital records to monitor customers, sales, or operations.',
-      43,
-    ],
-    [
-      'CORE_DIGITAL_05',
-      'DIGITAL',
-      'I have a plan for reliable internet, device access, backups, and account security.',
-      44,
-    ],
-    [
-      'CORE_LEADERSHIP_03',
-      'LEADERSHIP',
-      'Roles and decision responsibilities are clear among the people involved.',
-      45,
-    ],
-    [
-      'CORE_LEADERSHIP_04',
-      'LEADERSHIP',
-      'I can communicate the business direction clearly to partners and team members.',
-      46,
-    ],
-    [
-      'CORE_LEADERSHIP_05',
-      'LEADERSHIP',
-      'I know when to seek specialist support instead of making decisions alone.',
-      47,
-    ],
-    [
-      'CORE_RISK_03',
-      'RISK',
-      'I have identified actions that reduce the most serious business risks.',
-      48,
-    ],
-    [
-      'CORE_RISK_04',
-      'RISK',
-      'I understand how the business affects people, community, and the environment.',
-      49,
-    ],
-    [
-      'CORE_RISK_05',
-      'RISK',
-      'I have considered continuity plans for disruptions, losses, or key-person absence.',
-      50,
-    ],
-  ] as const;
+  const mandatoryCodes = mandatoryQuestions.map(([code]) => code);
+  await prisma.question.updateMany({
+    where: { source: 'LEGACY_ARCHIVED', active: true },
+    data: { active: false },
+  });
+  await prisma.question.updateMany({
+    where: { source: 'SYSTEM_MANDATORY', code: { notIn: [...mandatoryCodes] }, active: true },
+    data: { active: false },
+  });
+  await prisma.assessmentDomain.updateMany({
+    where: { code: { notIn: domains.map(([code]) => code) } },
+    data: { active: false },
+  });
 
-  for (const [code, domainCode, prompt, displayOrder] of questions) {
-    const domain = await prisma.assessmentDomain.findUniqueOrThrow({ where: { code: domainCode } });
+  for (const [index, [code, domainCode, prompt]] of mandatoryQuestions.entries()) {
     await prisma.question.upsert({
       where: { code },
-      update: { prompt, domainId: domain.id, displayOrder, active: true },
+      update: {
+        prompt,
+        domainId: domainIds.get(domainCode)!,
+        scope: 'CORE',
+        source: 'SYSTEM_MANDATORY',
+        createdById: null,
+        expertiseField: null,
+        sectorId: null,
+        stage: null,
+        required: true,
+        weight: 1,
+        displayOrder: index + 1,
+        active: true,
+        options: likertOptions,
+        scoringConfig: { min: 1, max: 5 },
+      },
       create: {
         code,
         prompt,
         type: 'LIKERT',
         scope: 'CORE',
-        domainId: domain.id,
-        displayOrder,
-        options: [
-          { label: 'Not yet', value: 1 },
-          { label: 'A little', value: 2 },
-          { label: 'Partly', value: 3 },
-          { label: 'Mostly', value: 4 },
-          { label: 'Confidently', value: 5 },
-        ],
+        source: 'SYSTEM_MANDATORY',
+        domainId: domainIds.get(domainCode)!,
+        required: true,
+        weight: 1,
+        displayOrder: index + 1,
+        options: likertOptions,
         scoringConfig: { min: 1, max: 5 },
       },
     });
   }
 
-  const marketDomain = await prisma.assessmentDomain.findUniqueOrThrow({
-    where: { code: 'MARKET' },
-  });
-  for (const [index, [sectorCode, sectorName]] of sectors.entries()) {
-    const sector = await prisma.sector.findUniqueOrThrow({ where: { code: sectorCode } });
-    await prisma.question.upsert({
-      where: { code: `SECTOR_${sectorCode}_01` },
-      update: {
-        sectorId: sector.id,
-        prompt: `I understand the customer expectations, operating conditions, and competition specific to ${sectorName}.`,
-        active: true,
-      },
-      create: {
-        code: `SECTOR_${sectorCode}_01`,
-        prompt: `I understand the customer expectations, operating conditions, and competition specific to ${sectorName}.`,
-        type: 'LIKERT',
-        scope: 'SECTOR',
-        domainId: marketDomain.id,
-        sectorId: sector.id,
-        displayOrder: 100 + index,
-        options: [
-          { label: 'Not yet', value: 1 },
-          { label: 'A little', value: 2 },
-          { label: 'Partly', value: 3 },
-          { label: 'Mostly', value: 4 },
-          { label: 'Confidently', value: 5 },
-        ],
-        scoringConfig: { min: 1, max: 5 },
-      },
-    });
-  }
-
-  const stageQuestions = [
-    [
-      'IDEA',
-      'OPPORTUNITY',
-      'I have a practical plan to test this idea with potential customers before making major investments.',
-    ],
-    [
-      'PREPARATION',
-      'MODEL',
-      'I have converted the idea into a documented launch plan with milestones and responsibilities.',
-    ],
-    [
-      'STARTUP',
-      'OPERATIONS',
-      'I can deliver consistently while learning from early customers and controlling cash use.',
-    ],
-    [
-      'OPERATING',
-      'FINANCE',
-      'I monitor sales, costs, cash flow, and operating performance using reliable records.',
-    ],
-    [
-      'GROWTH',
-      'LEADERSHIP',
-      'I can delegate, standardize operations, and finance responsible business growth.',
-    ],
-  ] as const;
-  for (const [index, [stage, domainCode, prompt]] of stageQuestions.entries()) {
-    const domain = await prisma.assessmentDomain.findUniqueOrThrow({ where: { code: domainCode } });
-    await prisma.question.upsert({
-      where: { code: `STAGE_${stage}_01` },
-      update: { prompt, stage, active: true },
-      create: {
-        code: `STAGE_${stage}_01`,
-        prompt,
-        type: 'LIKERT',
-        scope: 'STAGE',
-        domainId: domain.id,
-        stage,
-        displayOrder: 200 + index,
-        options: [
-          { label: 'Not yet', value: 1 },
-          { label: 'A little', value: 2 },
-          { label: 'Partly', value: 3 },
-          { label: 'Mostly', value: 4 },
-          { label: 'Confidently', value: 5 },
-        ],
-        scoringConfig: { min: 1, max: 5 },
-      },
-    });
-  }
-
-  console.log('Reference sectors, assessment domains, and questions are ready.');
+  console.log('Five mandatory classes and 50 core questions are ready.');
 }
 
 main()

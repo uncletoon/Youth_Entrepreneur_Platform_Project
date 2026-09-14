@@ -15,6 +15,12 @@ export const AssignmentsPage = () => {
   const [assessments, setAssessments] = useState<AssessmentSummary[]>([]);
   const [businesses, setBusinesses] = useState<BusinessSummary[]>([]);
   const [error, setError] = useState('');
+  const openAssessmentFor = (businessId: string) =>
+    assessments.find(
+      (assessment) =>
+        assessment.business.id === businessId &&
+        ['DRAFT', 'IN_PROGRESS'].includes(assessment.status),
+    );
 
   useEffect(() => {
     if (!accessToken) return;
@@ -41,23 +47,26 @@ export const AssignmentsPage = () => {
         </div>
       </section>
       <div className="assignment-business-list">
-        {businesses.map((business) => (
-          <article key={business.id}>
-            <div>
-              <BarChart3 />
-              <span>
-                <strong>{business.name}</strong>
-                <small>{business.sector?.name ?? 'Sector pending'}</small>
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate(`/app/assessment?businessId=${business.id}`)}
-            >
-              Start assessment <ArrowRight />
-            </button>
-          </article>
-        ))}
+        {businesses.map((business) => {
+          const openAssessment = openAssessmentFor(business.id);
+          return (
+            <article key={business.id}>
+              <div>
+                <BarChart3 />
+                <span>
+                  <strong>{business.name}</strong>
+                  <small>{business.sector?.name ?? 'Sector pending'}</small>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(`/app/assessment?businessId=${business.id}`)}
+              >
+                {openAssessment ? 'Resume assessment' : 'Start assessment'} <ArrowRight />
+              </button>
+            </article>
+          );
+        })}
         {!businesses.length ? <p>Add an innovation before starting an assessment.</p> : null}
       </div>
       <section className="workspace-section-heading workspace-section-heading--compact">
@@ -79,11 +88,22 @@ export const AssignmentsPage = () => {
             {item.result ? (
               <b>{Math.round(item.result.overallScore)}/100</b>
             ) : (
-              <span className="status-pill">In progress</span>
+              <span className="status-pill">
+                {['DRAFT', 'IN_PROGRESS'].includes(item.status)
+                  ? 'In progress'
+                  : item.status.replaceAll('_', ' ')}
+              </span>
             )}
             {item.result ? (
               <button type="button" onClick={() => navigate(`/app/results/${item.id}`)}>
                 View result
+              </button>
+            ) : ['DRAFT', 'IN_PROGRESS'].includes(item.status) ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/app/assessment?businessId=${item.business.id}`)}
+              >
+                Resume assessment
               </button>
             ) : null}
           </article>

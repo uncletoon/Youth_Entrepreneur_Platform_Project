@@ -83,6 +83,18 @@ enum QuestionScope {
   STAGE
 }
 
+enum QuestionSource {
+  SYSTEM_MANDATORY
+  EXPERT_SUPPLEMENTAL
+  LEGACY_ARCHIVED
+}
+
+enum AssessmentDomainSource {
+  SYSTEM_MANDATORY
+  EXPERT_SUPPLEMENTAL
+  LEGACY_ARCHIVED
+}
+
 enum QuestionType {
   SINGLE_CHOICE
   MULTIPLE_CHOICE
@@ -123,6 +135,8 @@ model User {
   adminFeedbackReceived   AdminFeedback[]      @relation("AdminFeedbackRecipient")
   feedbackReplies         FeedbackReply[]
   notifications           Notification[]
+  questionsCreated        Question[]           @relation("QuestionCreator")
+  domainsCreated          AssessmentDomain[]   @relation("DomainCreator")
   auditLogs               AuditLog[]           @relation("AuditActor")
 
   @@index([role, status])
@@ -232,6 +246,7 @@ model Sector {
   businesses      Business[]
   classifications BusinessClassification[]
   questions       Question[]
+  questionLinks   QuestionSector[]
 }
 
 model Business {
@@ -288,13 +303,23 @@ model BusinessClassification {
 }
 
 model AssessmentDomain {
-  id           String     @id @default(uuid()) @db.Uuid
-  code         String     @unique
-  name         String
-  description  String
-  weight       Float      @default(1)
-  displayOrder Int
-  questions    Question[]
+  id             String                 @id @default(uuid()) @db.Uuid
+  code           String                 @unique
+  name           String
+  description    String
+  weight         Float                  @default(1)
+  displayOrder   Int
+  active         Boolean                @default(true)
+  source         AssessmentDomainSource @default(SYSTEM_MANDATORY)
+  createdById    String?                @db.Uuid
+  expertiseField String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  questions      Question[]
+  createdBy      User?                  @relation("DomainCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([source, active, displayOrder])
+  @@index([createdById, active])
 }
 
 model Question {
@@ -311,6 +336,9 @@ model Question {
   weight        Float                @default(1)
   options       Json?
   scoringConfig Json?
+  source        QuestionSource   @default(SYSTEM_MANDATORY)
+  createdById   String?          @db.Uuid
+  expertiseField String?
   displayOrder  Int
   active        Boolean              @default(true)
   version       Int                  @default(1)
@@ -318,10 +346,24 @@ model Question {
   updatedAt     DateTime             @updatedAt
   domain        AssessmentDomain     @relation(fields: [domainId], references: [id])
   sector        Sector?              @relation(fields: [sectorId], references: [id])
+  sectors       QuestionSector[]
+  createdBy     User?                @relation("QuestionCreator", fields: [createdById], references: [id], onDelete: SetNull)
   responses     AssessmentResponse[]
 
   @@index([scope, active, displayOrder])
+  @@index([source, active, displayOrder])
+  @@index([createdById, active])
   @@index([sectorId, stage])
+}
+
+model QuestionSector {
+  questionId String   @db.Uuid
+  sectorId   String   @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sector     Sector   @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, sectorId])
+  @@index([sectorId, questionId])
 }
 
 model AssessmentSession {
@@ -371,6 +413,7 @@ model AssessmentResult {
   gaps            String[]
   positiveFactors String[]
   riskFactors     String[]
+  supplementalScores Json              @default("[]")
   disclaimer      String
   rulesVersion    String
   createdAt       DateTime          @default(now())

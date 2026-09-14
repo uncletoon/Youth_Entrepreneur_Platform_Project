@@ -2,6 +2,7 @@ import { businessProfileSchema, entrepreneurProfileSchema } from '@yersps/contra
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import {
   authenticate,
   requireActiveAccount,
@@ -46,6 +47,26 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
     );
   return result.data;
 };
+
+const assessmentQuestionWhere = (business: {
+  sectorId: string | null;
+}): Prisma.QuestionWhereInput => ({
+  active: true,
+  domain: { active: true },
+  OR: [
+    { source: 'SYSTEM_MANDATORY', scope: 'CORE' },
+    ...(business.sectorId
+      ? [
+          {
+            source: 'EXPERT_SUPPLEMENTAL' as const,
+            scope: 'SECTOR' as const,
+            domain: { active: true, source: 'EXPERT_SUPPLEMENTAL' as const },
+            sectors: { some: { sectorId: business.sectorId } },
+          },
+        ]
+      : []),
+  ],
+});
 
 router.use(authenticate, requireActiveAccount);
 
@@ -389,7 +410,15 @@ router.post('/assessment/start', async (request: AuthenticatedRequest, response,
       // StrictMode and repeated clicks can start concurrent requests. The partial unique index
       // allows only one open session, while skipDuplicates makes both requests return it safely.
       await prisma.assessmentSession.createMany({
-        data: [{ userId, businessId: business.id, status: 'IN_PROGRESS' }],
+        data: [
+          {
+            userId,
+            businessId: business.id,
+            status: 'IN_PROGRESS',
+            templateVersion: 'mandatory-50-plus-expert-v2',
+            scoringVersion: 'readiness-rules-v3',
+          },
+        ],
         skipDuplicates: true,
       });
       session = await prisma.assessmentSession.findFirstOrThrow({
@@ -398,15 +427,17 @@ router.post('/assessment/start', async (request: AuthenticatedRequest, response,
       });
     }
     const questions = await prisma.question.findMany({
-      where: {
-        active: true,
-        OR: [{ scope: 'CORE' }, { sectorId: business.sectorId }, { stage: business.stage }],
+      where: assessmentQuestionWhere(business),
+      orderBy: [{ source: 'asc' }, { displayOrder: 'asc' }],
+      include: {
+        domain: true,
+        sector: true,
+        sectors: { include: { sector: true } },
+        createdBy: { select: { fullName: true } },
       },
-      orderBy: { displayOrder: 'asc' },
-      include: { domain: true },
     });
     const responses = await prisma.assessmentResponse.findMany({
-      where: { sessionId: session.id },
+      where: { sessionId: session.id, question: assessmentQuestionWhere(business) },
     });
     response.json({ success: true, data: { session, questions, responses } });
   } catch (error) {
@@ -518,12 +549,26 @@ router.put(
       const input = parse(responseSchema, request.body);
       const session = await prisma.assessmentSession.findFirst({
         where: { id: sessionId, userId, status: { in: ['DRAFT', 'IN_PROGRESS'] } },
+        include: { business: { select: { sectorId: true } } },
       });
       if (!session)
         throw new AuthError(
           'ASSESSMENT_NOT_FOUND',
           'Assessment not found or already submitted.',
           404,
+        );
+      const questionIds = [...new Set(input.responses.map(({ questionId }) => questionId))];
+      const applicableQuestions = await prisma.question.count({
+        where: {
+          ...assessmentQuestionWhere(session.business),
+          id: { in: questionIds },
+        },
+      });
+      if (applicableQuestions !== questionIds.length)
+        throw new AuthError(
+          'QUESTION_NOT_APPLICABLE',
+          'One or more questions do not belong to this business assessment.',
+          400,
         );
       await prisma.$transaction(
         input.responses.map(({ questionId, value }) =>
@@ -556,8 +601,19 @@ router.post(
       const session = await prisma.assessmentSession.findFirst({
         where: { id: sessionId, userId, status: { in: ['DRAFT', 'IN_PROGRESS'] } },
         include: {
-          business: { select: { sectorId: true, stage: true } },
-          responses: { include: { question: { include: { domain: true } } } },
+          business: { select: { sectorId: true } },
+          responses: {
+            include: {
+              question: {
+                include: {
+                  domain: true,
+                  sector: true,
+                  sectors: { include: { sector: true } },
+                  createdBy: { select: { fullName: true } },
+                },
+              },
+            },
+          },
         },
       });
       if (!session)
@@ -566,18 +622,15 @@ router.post(
           'Assessment not found or already submitted.',
           404,
         );
-      const requiredCount = await prisma.question.count({
+      const requiredQuestions = await prisma.question.findMany({
         where: {
-          active: true,
+          ...assessmentQuestionWhere(session.business),
           required: true,
-          OR: [
-            { scope: 'CORE' },
-            { sectorId: session.business.sectorId },
-            { stage: session.business.stage },
-          ],
         },
+        select: { id: true },
       });
-      if (session.responses.length < requiredCount)
+      const answeredQuestionIds = new Set(session.responses.map(({ questionId }) => questionId));
+      if (requiredQuestions.some(({ id }) => !answeredQuestionIds.has(id)))
         throw new AuthError(
           'ASSESSMENT_INCOMPLETE',
           'Answer every required question before submitting.',
@@ -585,7 +638,13 @@ router.post(
         );
 
       const grouped = new Map<string, { name: string; weight: number; scores: number[] }>();
-      for (const item of session.responses) {
+      const applicableQuestionIds = new Set(requiredQuestions.map(({ id }) => id));
+      const applicableResponses = session.responses.filter(({ questionId }) =>
+        applicableQuestionIds.has(questionId),
+      );
+      for (const item of applicableResponses.filter(
+        ({ question }) => question.source === 'SYSTEM_MANDATORY',
+      )) {
         const domain = item.question.domain;
         const current = grouped.get(domain.code) ?? {
           name: domain.name,
@@ -604,6 +663,34 @@ router.post(
         name: value.name,
       }));
       const calculated = calculateReadiness(domains);
+      const supplementalGroups = new Map<
+        string,
+        { name: string; sector: string; expertiseField: string; scores: number[] }
+      >();
+      for (const item of applicableResponses.filter(
+        ({ question }) => question.source === 'EXPERT_SUPPLEMENTAL',
+      )) {
+        const expertiseField = item.question.expertiseField ?? 'Expert field assessment';
+        const sector = item.question.sectors.map(({ sector: value }) => value.name).join(', ');
+        const key = item.question.domainId;
+        const current = supplementalGroups.get(key) ?? {
+          name: item.question.domain.name,
+          sector: sector || 'Sector-specific',
+          expertiseField,
+          scores: [],
+        };
+        current.scores.push(((item.rawScore ?? 0) / (item.maxScore ?? 5)) * 100);
+        supplementalGroups.set(key, current);
+      }
+      const supplementalScores = [...supplementalGroups.values()].map((group) => ({
+        name: group.name,
+        sector: group.sector,
+        expertiseField: group.expertiseField,
+        score: Math.round(
+          group.scores.reduce((sum, score) => sum + score, 0) / group.scores.length,
+        ),
+        questionCount: group.scores.length,
+      }));
       const result = await prisma.$transaction(async (transaction) => {
         const created = await transaction.assessmentResult.create({
           data: {
@@ -616,6 +703,7 @@ router.post(
             gaps: calculated.gaps,
             positiveFactors: calculated.strengths,
             riskFactors: calculated.gaps,
+            supplementalScores,
             disclaimer: calculated.disclaimer,
             rulesVersion: calculated.rulesVersion,
           },

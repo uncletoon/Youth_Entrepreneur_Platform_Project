@@ -22,7 +22,6 @@ playwright-report/
 .vite/
 .eslintcache
 .npm/
-e2e/
 
 # Generated Prisma client
 apps/api/src/generated/prisma/

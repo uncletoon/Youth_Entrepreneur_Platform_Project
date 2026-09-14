@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AssessmentStatus, Prisma } from '../../generated/prisma/client.js';
 import { prisma } from '../../database/prisma.js';
@@ -25,18 +26,32 @@ const recommendationSchema = z.object({
 });
 const reviewSchema = z.object({ status: z.enum(['UNDER_REVIEW', 'REVIEWED', 'ARCHIVED']) });
 const questionSchema = z.object({
-  code: z.string().trim().min(3).max(80),
+  code: z.string().trim().min(3).max(80).optional(),
   prompt: z.string().trim().min(10).max(1000),
   helpText: z.string().trim().max(1000).optional(),
   type: z.literal('LIKERT'),
   scope: z.enum(['CORE', 'SECTOR', 'STAGE']),
   domainId: z.string().uuid(),
   sectorId: z.string().uuid().nullable().optional(),
+  sectorIds: z.array(z.string().uuid()).min(1).max(50).optional(),
   stage: z.enum(['IDEA', 'PREPARATION', 'STARTUP', 'OPERATING', 'GROWTH']).nullable().optional(),
   required: z.boolean().default(true),
   weight: z.number().positive().max(100).default(1),
-  displayOrder: z.number().int().min(1),
+  displayOrder: z.number().int().min(1).optional(),
   active: z.boolean().default(true),
+});
+const expertQuestionSetSchema = z.object({
+  sectorIds: z.array(z.string().uuid()).min(1).max(50),
+  questions: z
+    .array(
+      z.object({
+        id: z.string().uuid().optional(),
+        prompt: z.string().trim().min(10).max(1000),
+        helpText: z.string().trim().max(1000).optional(),
+      }),
+    )
+    .min(5)
+    .max(10),
 });
 const sectorSchema = z.object({
   name: z.string().trim().min(2),
@@ -45,10 +60,18 @@ const sectorSchema = z.object({
   active: z.boolean(),
 });
 const domainSchema = z.object({
+  code: z.string().trim().min(2).max(40).optional(),
   name: z.string().trim().min(2).max(150).optional(),
-  weight: z.number().positive().max(100),
+  weight: z.number().positive().max(100).optional(),
   description: z.string().trim().min(5),
   displayOrder: z.number().int().min(1).optional(),
+  active: z.boolean().optional(),
+});
+const domainCreateSchema = domainSchema.extend({
+  code: z.string().trim().min(2).max(40).optional(),
+  name: z.string().trim().min(2).max(150),
+  displayOrder: z.number().int().min(1).optional(),
+  active: z.boolean().default(true),
 });
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -112,17 +135,70 @@ const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""'
 const protectDomainMinimum = async (questionId: string) => {
   const question = await prisma.question.findUnique({ where: { id: questionId } });
   if (!question) throw new AuthError('QUESTION_NOT_FOUND', 'Question not found.', 404);
-  if (!question.active || question.scope !== 'CORE') return question;
+  if (!question.active || question.source !== 'SYSTEM_MANDATORY') return question;
   const activeCoreQuestions = await prisma.question.count({
-    where: { domainId: question.domainId, scope: 'CORE', active: true },
+    where: { domainId: question.domainId, source: 'SYSTEM_MANDATORY', active: true },
   });
-  if (activeCoreQuestions <= 5)
+  if (activeCoreQuestions <= 10)
     throw new AuthError(
       'DOMAIN_MINIMUM_REQUIRED',
-      'Every domain must keep at least five active core questions.',
+      'Every mandatory class must keep its ten active core questions.',
       409,
     );
   return question;
+};
+
+const questionForManagement = async (request: AuthenticatedRequest, questionId: string) => {
+  const userId = adminIdFor(request);
+  const question = await prisma.question.findUnique({
+    where: { id: questionId },
+    include: { _count: { select: { responses: true } } },
+  });
+  if (!question) throw new AuthError('QUESTION_NOT_FOUND', 'Question not found.', 404);
+  if (
+    request.auth?.role !== 'SYSTEM_ADMIN' &&
+    (question.source !== 'EXPERT_SUPPLEMENTAL' || question.createdById !== userId)
+  )
+    throw new AuthError(
+      'QUESTION_OWNERSHIP_REQUIRED',
+      'Experts can manage only the supplemental questions they created.',
+      403,
+    );
+  return { question, userId };
+};
+
+const generatedQuestionCode = () =>
+  `EXPERT_${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;
+
+const generatedDomainCode = (userId: string) =>
+  `EXPERT_${userId.replaceAll('-', '').slice(0, 8).toUpperCase()}_${randomUUID()
+    .replaceAll('-', '')
+    .slice(0, 8)
+    .toUpperCase()}`;
+
+const syncExpertDomainAvailability = async (
+  transaction: Prisma.TransactionClient,
+  domainId: string,
+) => {
+  const activeQuestionCount = await transaction.question.count({
+    where: { domainId, source: 'EXPERT_SUPPLEMENTAL', active: true },
+  });
+  await transaction.assessmentDomain.update({
+    where: { id: domainId },
+    data: { active: activeQuestionCount >= 5 && activeQuestionCount <= 10 },
+  });
+  return activeQuestionCount;
+};
+
+const expertDomainFor = async (domainId: string, userId: string) => {
+  const domain = await prisma.assessmentDomain.findUnique({ where: { id: domainId } });
+  if (!domain || domain.source !== 'EXPERT_SUPPLEMENTAL' || domain.createdById !== userId)
+    throw new AuthError(
+      'EXPERT_DOMAIN_REQUIRED',
+      'Choose one of your own Expert supplemental domains.',
+      400,
+    );
+  return domain;
 };
 
 router.use(authenticate, requireActiveAccount);
@@ -477,10 +553,24 @@ router.patch(
 
 router.get('/questions', async (request: AuthenticatedRequest, response, next) => {
   try {
-    adminIdFor(request);
+    const userId = adminIdFor(request);
     const questions = await prisma.question.findMany({
+      where:
+        request.auth?.role === 'SYSTEM_ADMIN'
+          ? { source: { not: 'LEGACY_ARCHIVED' } }
+          : {
+              OR: [
+                { source: 'SYSTEM_MANDATORY' },
+                { source: 'EXPERT_SUPPLEMENTAL', createdById: userId },
+              ],
+            },
       orderBy: [{ displayOrder: 'asc' }, { code: 'asc' }],
-      include: { domain: true, sector: true },
+      include: {
+        domain: true,
+        sector: true,
+        sectors: { include: { sector: true } },
+        createdBy: { select: { id: true, fullName: true } },
+      },
     });
     response.json({ success: true, data: questions });
   } catch (error) {
@@ -490,12 +580,23 @@ router.get('/questions', async (request: AuthenticatedRequest, response, next) =
 
 router.get('/questions/:questionId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    adminIdFor(request);
+    const userId = adminIdFor(request);
     const question = await prisma.question.findUnique({
       where: { id: String(request.params.questionId) },
-      include: { domain: true, sector: true },
+      include: {
+        domain: true,
+        sector: true,
+        sectors: { include: { sector: true } },
+        createdBy: { select: { id: true, fullName: true } },
+      },
     });
     if (!question) throw new AuthError('QUESTION_NOT_FOUND', 'Question not found.', 404);
+    if (
+      request.auth?.role !== 'SYSTEM_ADMIN' &&
+      question.source === 'EXPERT_SUPPLEMENTAL' &&
+      question.createdById !== userId
+    )
+      throw new AuthError('QUESTION_NOT_FOUND', 'Question not found.', 404);
     response.json({ success: true, data: question });
   } catch (error) {
     next(error);
@@ -506,26 +607,87 @@ router.post('/questions', async (request: AuthenticatedRequest, response, next) 
   try {
     const adminId = adminIdFor(request);
     const input = parse(questionSchema, request.body);
-    const question = await prisma.question.create({
-      data: {
-        ...input,
-        options:
-          input.type === 'LIKERT'
-            ? [
-                { label: 'Not yet', value: 1 },
-                { label: 'A little', value: 2 },
-                { label: 'Partly', value: 3 },
-                { label: 'Mostly', value: 4 },
-                { label: 'Confidently', value: 5 },
-              ]
-            : undefined,
-        scoringConfig: input.type === 'LIKERT' ? { min: 1, max: 5 } : undefined,
-      },
+    const isSystem = request.auth?.role === 'SYSTEM_ADMIN';
+    if (isSystem && (!input.code || !input.displayOrder))
+      throw new AuthError(
+        'MANDATORY_METADATA_REQUIRED',
+        'Mandatory questions require a stable code and display order.',
+        400,
+      );
+    if (isSystem && input.scope !== 'CORE')
+      throw new AuthError(
+        'MANDATORY_SCOPE_REQUIRED',
+        'System mandatory questions must use the core scope.',
+        400,
+      );
+    if (!isSystem && (input.scope !== 'SECTOR' || !input.sectorIds?.length))
+      throw new AuthError(
+        'EXPERT_SECTOR_REQUIRED',
+        'Choose at least one innovation field for an Expert supplemental question.',
+        400,
+      );
+    const expertProfile = isSystem
+      ? null
+      : await prisma.expertProfile.findUniqueOrThrow({ where: { userId: adminId } });
+    if (!isSystem) {
+      await expertDomainFor(input.domainId, adminId);
+      const activeQuestionCount = await prisma.question.count({
+        where: { domainId: input.domainId, source: 'EXPERT_SUPPLEMENTAL', active: true },
+      });
+      if (activeQuestionCount >= 10)
+        throw new AuthError(
+          'EXPERT_DOMAIN_MAXIMUM',
+          'This Expert domain already has the maximum of 10 active questions.',
+          409,
+        );
+    }
+    const nextOrder = isSystem
+      ? input.displayOrder!
+      : ((
+          await prisma.question.aggregate({
+            where: { domainId: input.domainId, source: 'EXPERT_SUPPLEMENTAL' },
+            _max: { displayOrder: true },
+          })
+        )._max.displayOrder ?? 0) + 1;
+    const question = await prisma.$transaction(async (transaction) => {
+      const created = await transaction.question.create({
+        data: {
+          code: isSystem ? input.code! : generatedQuestionCode(),
+          prompt: input.prompt,
+          helpText: input.helpText,
+          type: 'LIKERT',
+          scope: isSystem ? 'CORE' : 'SECTOR',
+          domainId: input.domainId,
+          sectorId: null,
+          stage: null,
+          required: true,
+          weight: 1,
+          displayOrder: nextOrder,
+          active: input.active,
+          source: isSystem ? 'SYSTEM_MANDATORY' : 'EXPERT_SUPPLEMENTAL',
+          createdById: isSystem ? null : adminId,
+          expertiseField: expertProfile?.expertiseField ?? null,
+          sectors: isSystem
+            ? undefined
+            : { create: input.sectorIds!.map((sectorId) => ({ sectorId })) },
+          options: [
+            { label: 'Not yet', value: 1 },
+            { label: 'A little', value: 2 },
+            { label: 'Partly', value: 3 },
+            { label: 'Mostly', value: 4 },
+            { label: 'Confidently', value: 5 },
+          ],
+          scoringConfig: { min: 1, max: 5 },
+        },
+        include: { domain: true, sectors: { include: { sector: true } } },
+      });
+      if (!isSystem) await syncExpertDomainAvailability(transaction, input.domainId);
+      return created;
     });
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
-        action: 'QUESTION_CREATED',
+        action: isSystem ? 'MANDATORY_QUESTION_CREATED' : 'EXPERT_QUESTION_CREATED',
         entityType: 'Question',
         entityId: question.id,
       },
@@ -536,22 +698,239 @@ router.post('/questions', async (request: AuthenticatedRequest, response, next) 
   }
 });
 
+router.put(
+  '/domains/:domainId/question-set',
+  async (request: AuthenticatedRequest, response, next) => {
+    try {
+      const adminId = adminIdFor(request);
+      if (request.auth?.role !== 'EXPERT')
+        throw new AuthError(
+          'EXPERT_REQUIRED',
+          'Only an approved Expert can save an Expert supplemental question set.',
+          403,
+        );
+      const domainId = String(request.params.domainId);
+      const input = parse(expertQuestionSetSchema, request.body);
+      await expertDomainFor(domainId, adminId);
+      const suppliedIds = input.questions.flatMap((question) => (question.id ? [question.id] : []));
+      if (new Set(suppliedIds).size !== suppliedIds.length)
+        throw new AuthError(
+          'DUPLICATE_QUESTION',
+          'Each existing question can appear only once in a question set.',
+          400,
+        );
+      const expertProfile = await prisma.expertProfile.findUniqueOrThrow({
+        where: { userId: adminId },
+      });
+
+      const questions = await prisma.$transaction(async (transaction) => {
+        const existing = await transaction.question.findMany({
+          where: {
+            domainId,
+            source: 'EXPERT_SUPPLEMENTAL',
+            createdById: adminId,
+            active: true,
+          },
+          include: { _count: { select: { responses: true } } },
+        });
+        const existingById = new Map(existing.map((question) => [question.id, question]));
+        if (suppliedIds.some((id) => !existingById.has(id)))
+          throw new AuthError(
+            'QUESTION_OWNERSHIP_REQUIRED',
+            'The question set contains a question that does not belong to this Expert domain.',
+            403,
+          );
+
+        const retainedIds = new Set(suppliedIds);
+        for (const omitted of existing.filter((question) => !retainedIds.has(question.id))) {
+          if (omitted._count.responses > 0) {
+            await transaction.question.update({
+              where: { id: omitted.id },
+              data: { active: false },
+            });
+          } else {
+            await transaction.question.delete({ where: { id: omitted.id } });
+          }
+        }
+
+        const saved = [];
+        for (const [index, item] of input.questions.entries()) {
+          const sharedData = {
+            prompt: item.prompt,
+            helpText: item.helpText || null,
+            scope: 'SECTOR' as const,
+            sectorId: null,
+            stage: null,
+            required: true,
+            weight: 1,
+            displayOrder: index + 1,
+            active: true,
+            expertiseField: expertProfile.expertiseField,
+          };
+          const savedQuestion = item.id
+            ? await transaction.question.update({
+                where: { id: item.id },
+                data: {
+                  ...sharedData,
+                  sectors: {
+                    deleteMany: {},
+                    create: input.sectorIds.map((sectorId) => ({ sectorId })),
+                  },
+                },
+                include: { domain: true, sectors: { include: { sector: true } } },
+              })
+            : await transaction.question.create({
+                data: {
+                  ...sharedData,
+                  code: generatedQuestionCode(),
+                  type: 'LIKERT',
+                  domainId,
+                  source: 'EXPERT_SUPPLEMENTAL',
+                  createdById: adminId,
+                  sectors: {
+                    create: input.sectorIds.map((sectorId) => ({ sectorId })),
+                  },
+                  options: [
+                    { label: 'Not yet', value: 1 },
+                    { label: 'A little', value: 2 },
+                    { label: 'Partly', value: 3 },
+                    { label: 'Mostly', value: 4 },
+                    { label: 'Confidently', value: 5 },
+                  ],
+                  scoringConfig: { min: 1, max: 5 },
+                },
+                include: { domain: true, sectors: { include: { sector: true } } },
+              });
+          saved.push(savedQuestion);
+        }
+
+        await syncExpertDomainAvailability(transaction, domainId);
+        await transaction.auditLog.create({
+          data: {
+            actorId: adminId,
+            action: 'EXPERT_QUESTION_SET_SAVED',
+            entityType: 'AssessmentDomain',
+            entityId: domainId,
+            newValues: {
+              questionCount: saved.length,
+              sectorIds: input.sectorIds,
+              questionIds: saved.map((question) => question.id),
+            },
+          },
+        });
+        return saved;
+      });
+
+      response.json({
+        success: true,
+        data: {
+          domainId,
+          questionCount: questions.length,
+          active: questions.length >= 5,
+          questions,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.patch('/questions/:questionId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = systemIdFor(request);
+    const questionId = String(request.params.questionId);
+    const { question: existing, userId: adminId } = await questionForManagement(
+      request,
+      questionId,
+    );
     const input = parse(questionSchema.partial(), request.body);
-    if (input.active === false) await protectDomainMinimum(String(request.params.questionId));
-    const question = await prisma.question.update({
-      where: { id: String(request.params.questionId) },
-      data: input,
+    if (input.active === false) await protectDomainMinimum(questionId);
+    const isSystem = request.auth?.role === 'SYSTEM_ADMIN';
+    if (existing.source === 'SYSTEM_MANDATORY' && input.scope && input.scope !== 'CORE')
+      throw new AuthError(
+        'MANDATORY_SCOPE_REQUIRED',
+        'System mandatory questions must use the core scope.',
+        400,
+      );
+    if (existing.source === 'EXPERT_SUPPLEMENTAL' && input.scope && input.scope !== 'SECTOR')
+      throw new AuthError(
+        'EXPERT_SECTOR_REQUIRED',
+        'Expert supplemental questions must remain sector specific.',
+        400,
+      );
+    if (
+      existing.source === 'EXPERT_SUPPLEMENTAL' &&
+      input.sectorIds &&
+      input.sectorIds.length === 0
+    )
+      throw new AuthError(
+        'EXPERT_SECTOR_REQUIRED',
+        'Choose at least one innovation field for an Expert supplemental question.',
+        400,
+      );
+    if (!isSystem && input.domainId) await expertDomainFor(input.domainId, adminId);
+    const targetDomainId = input.domainId ?? existing.domainId;
+    if (existing.source === 'EXPERT_SUPPLEMENTAL' && input.active === true && !existing.active) {
+      const activeQuestionCount = await prisma.question.count({
+        where: { domainId: targetDomainId, source: 'EXPERT_SUPPLEMENTAL', active: true },
+      });
+      if (activeQuestionCount >= 10)
+        throw new AuthError(
+          'EXPERT_DOMAIN_MAXIMUM',
+          'This Expert domain already has the maximum of 10 active questions.',
+          409,
+        );
+    }
+    const update = isSystem
+      ? {
+          ...input,
+          sectorIds: undefined,
+          ...(existing.source === 'SYSTEM_MANDATORY'
+            ? { scope: 'CORE' as const, sectorId: null, stage: null, required: true, weight: 1 }
+            : { scope: 'SECTOR' as const, stage: null, required: true }),
+        }
+      : {
+          prompt: input.prompt,
+          helpText: input.helpText,
+          domainId: input.domainId,
+          active: input.active,
+          scope: 'SECTOR' as const,
+          sectorId: null,
+          stage: null,
+          required: true,
+          weight: 1,
+          ...(input.sectorIds
+            ? {
+                sectors: {
+                  deleteMany: {},
+                  create: input.sectorIds.map((sectorId) => ({ sectorId })),
+                },
+              }
+            : {}),
+        };
+    const question = await prisma.$transaction(async (transaction) => {
+      const updated = await transaction.question.update({
+        where: { id: questionId },
+        data: update,
+        include: { domain: true, sectors: { include: { sector: true } } },
+      });
+      if (existing.source === 'EXPERT_SUPPLEMENTAL') {
+        await syncExpertDomainAvailability(transaction, existing.domainId);
+        if (targetDomainId !== existing.domainId)
+          await syncExpertDomainAvailability(transaction, targetDomainId);
+      }
+      return updated;
     });
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
-        action: 'QUESTION_UPDATED',
+        action:
+          question.source === 'SYSTEM_MANDATORY'
+            ? 'MANDATORY_QUESTION_UPDATED'
+            : 'EXPERT_QUESTION_UPDATED',
         entityType: 'Question',
         entityId: question.id,
-        newValues: input,
+        newValues: update,
       },
     });
     response.json({ success: true, data: question });
@@ -562,24 +941,25 @@ router.patch('/questions/:questionId', async (request: AuthenticatedRequest, res
 
 router.delete('/questions/:questionId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = systemIdFor(request);
     const questionId = String(request.params.questionId);
-    const question = await prisma.question.findUnique({
-      where: { id: questionId },
-      include: { _count: { select: { responses: true } } },
-    });
-    if (!question) throw new AuthError('QUESTION_NOT_FOUND', 'Question not found.', 404);
+    const { question, userId: adminId } = await questionForManagement(request, questionId);
     await protectDomainMinimum(questionId);
     const archived = question._count.responses > 0;
-    if (archived) {
-      await prisma.question.update({ where: { id: questionId }, data: { active: false } });
-    } else {
-      await prisma.question.delete({ where: { id: questionId } });
-    }
+    await prisma.$transaction(async (transaction) => {
+      if (archived) {
+        await transaction.question.update({ where: { id: questionId }, data: { active: false } });
+      } else {
+        await transaction.question.delete({ where: { id: questionId } });
+      }
+      if (question.source === 'EXPERT_SUPPLEMENTAL')
+        await syncExpertDomainAvailability(transaction, question.domainId);
+    });
     await prisma.auditLog.create({
       data: {
         actorId: adminId,
-        action: archived ? 'QUESTION_ARCHIVED' : 'QUESTION_DELETED',
+        action: archived
+          ? `${question.source}_QUESTION_ARCHIVED`
+          : `${question.source}_QUESTION_DELETED`,
         entityType: 'Question',
         entityId: questionId,
         reason: archived
@@ -604,13 +984,29 @@ router.delete('/questions/:questionId', async (request: AuthenticatedRequest, re
 
 router.get('/configuration', async (request: AuthenticatedRequest, response, next) => {
   try {
-    adminIdFor(request);
+    const userId = adminIdFor(request);
     const [sectors, domains] = await Promise.all([
       prisma.sector.findMany({ orderBy: { name: 'asc' } }),
       prisma.assessmentDomain.findMany({
-        orderBy: { displayOrder: 'asc' },
+        where:
+          request.auth?.role === 'SYSTEM_ADMIN'
+            ? { source: { not: 'LEGACY_ARCHIVED' } }
+            : {
+                OR: [
+                  { source: 'SYSTEM_MANDATORY', active: true },
+                  { source: 'EXPERT_SUPPLEMENTAL', createdById: userId },
+                ],
+              },
+        orderBy: [{ source: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
         include: {
-          _count: { select: { questions: { where: { active: true } } } },
+          createdBy: { select: { id: true, fullName: true } },
+          _count: {
+            select: {
+              questions: {
+                where: { active: true },
+              },
+            },
+          },
         },
       }),
     ]);
@@ -645,11 +1041,44 @@ router.patch('/sectors/:sectorId', async (request: AuthenticatedRequest, respons
 
 router.patch('/domains/:domainId', async (request: AuthenticatedRequest, response, next) => {
   try {
-    const adminId = systemIdFor(request);
+    const adminId = adminIdFor(request);
     const input = parse(domainSchema.partial(), request.body);
+    const existing = await prisma.assessmentDomain.findUnique({
+      where: { id: String(request.params.domainId) },
+    });
+    if (!existing) throw new AuthError('DOMAIN_NOT_FOUND', 'Readiness domain not found.', 404);
+    const isSystem = request.auth?.role === 'SYSTEM_ADMIN';
+    if (
+      !isSystem &&
+      (existing.source !== 'EXPERT_SUPPLEMENTAL' || existing.createdById !== adminId)
+    )
+      throw new AuthError(
+        'DOMAIN_OWNERSHIP_REQUIRED',
+        'Experts can manage only the supplemental domains they created.',
+        403,
+      );
+    if (input.active === false) {
+      const mandatoryCount = await prisma.question.count({
+        where: {
+          domainId: String(request.params.domainId),
+          source: 'SYSTEM_MANDATORY',
+          active: true,
+        },
+      });
+      if (mandatoryCount > 0)
+        throw new AuthError(
+          'DOMAIN_IN_USE',
+          'Archive or move the mandatory questions before deactivating this class.',
+          409,
+        );
+    }
+    const expertUpdate = {
+      name: input.name,
+      description: input.description,
+    };
     const domain = await prisma.assessmentDomain.update({
       where: { id: String(request.params.domainId) },
-      data: input,
+      data: isSystem ? input : expertUpdate,
     });
     await prisma.auditLog.create({
       data: {
@@ -661,6 +1090,115 @@ router.patch('/domains/:domainId', async (request: AuthenticatedRequest, respons
       },
     });
     response.json({ success: true, data: domain });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/domains', async (request: AuthenticatedRequest, response, next) => {
+  try {
+    const adminId = adminIdFor(request);
+    const input = parse(domainCreateSchema, request.body);
+    const isSystem = request.auth?.role === 'SYSTEM_ADMIN';
+    if (isSystem && (!input.code || !input.displayOrder))
+      throw new AuthError(
+        'MANDATORY_METADATA_REQUIRED',
+        'A mandatory class requires a stable code and display order.',
+        400,
+      );
+    const expertProfile = isSystem
+      ? null
+      : await prisma.expertProfile.findUniqueOrThrow({ where: { userId: adminId } });
+    const nextOrder = isSystem
+      ? input.displayOrder!
+      : ((
+          await prisma.assessmentDomain.aggregate({
+            where: { source: 'EXPERT_SUPPLEMENTAL', createdById: adminId },
+            _max: { displayOrder: true },
+          })
+        )._max.displayOrder ?? 1000) + 1;
+    const domain = await prisma.assessmentDomain.create({
+      data: {
+        code: isSystem ? input.code! : generatedDomainCode(adminId),
+        name: input.name,
+        description: input.description,
+        weight: isSystem ? (input.weight ?? 1) : 1,
+        displayOrder: nextOrder,
+        active: isSystem ? input.active : false,
+        source: isSystem ? 'SYSTEM_MANDATORY' : 'EXPERT_SUPPLEMENTAL',
+        createdById: isSystem ? null : adminId,
+        expertiseField: expertProfile?.expertiseField ?? null,
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: isSystem ? 'SCORING_DOMAIN_CREATED' : 'EXPERT_DOMAIN_CREATED',
+        entityType: 'AssessmentDomain',
+        entityId: domain.id,
+        newValues: input,
+      },
+    });
+    response.status(201).json({ success: true, data: domain });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/domains/:domainId', async (request: AuthenticatedRequest, response, next) => {
+  try {
+    const adminId = adminIdFor(request);
+    const domainId = String(request.params.domainId);
+    const domain = await prisma.assessmentDomain.findUnique({
+      where: { id: domainId },
+      include: {
+        questions: {
+          select: { id: true, active: true, source: true, _count: { select: { responses: true } } },
+        },
+      },
+    });
+    if (!domain) throw new AuthError('DOMAIN_NOT_FOUND', 'Readiness class not found.', 404);
+    if (
+      request.auth?.role !== 'SYSTEM_ADMIN' &&
+      (domain.source !== 'EXPERT_SUPPLEMENTAL' || domain.createdById !== adminId)
+    )
+      throw new AuthError(
+        'DOMAIN_OWNERSHIP_REQUIRED',
+        'Experts can remove only the supplemental domains they created.',
+        403,
+      );
+    if (
+      domain.questions.some((question) => question.active && question.source === 'SYSTEM_MANDATORY')
+    )
+      throw new AuthError(
+        'DOMAIN_IN_USE',
+        'A class with active mandatory questions cannot be removed.',
+        409,
+      );
+    const hasHistory = domain.questions.some((question) => question._count.responses > 0);
+    if (hasHistory || domain.questions.length > 0) {
+      await prisma.$transaction([
+        prisma.question.updateMany({ where: { domainId }, data: { active: false } }),
+        prisma.assessmentDomain.update({ where: { id: domainId }, data: { active: false } }),
+      ]);
+    } else {
+      await prisma.assessmentDomain.delete({ where: { id: domainId } });
+    }
+    await prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action:
+          hasHistory || domain.questions.length > 0
+            ? 'SCORING_DOMAIN_ARCHIVED'
+            : 'SCORING_DOMAIN_DELETED',
+        entityType: 'AssessmentDomain',
+        entityId: domainId,
+      },
+    });
+    response.json({
+      success: true,
+      data: { deleted: !hasHistory && domain.questions.length === 0 },
+    });
   } catch (error) {
     next(error);
   }

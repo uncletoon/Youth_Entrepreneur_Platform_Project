@@ -8,7 +8,11 @@ export interface SectorSummary {
 interface AssessmentQuestion {
   id: string;
   prompt: string;
+  helpText?: string;
+  source: 'SYSTEM_MANDATORY' | 'EXPERT_SUPPLEMENTAL';
   domain: { name: string };
+  sector: { name: string } | null;
+  createdBy: { fullName: string } | null;
 }
 export interface AssessmentPayload {
   session: { id: string };
@@ -21,12 +25,19 @@ interface DomainScore {
   score: number;
   weight: number;
 }
+interface SupplementalScore {
+  name: string;
+  sector: string;
+  score: number;
+  questionCount: number;
+}
 export interface ReadinessResultPayload {
   result: {
     overallScore: number;
     readinessLevel: string;
     riskLevel: string;
     domainScores: DomainScore[];
+    supplementalScores: SupplementalScore[];
     strengths: string[];
     disclaimer: string;
   };
@@ -81,7 +92,7 @@ export interface AssessmentSummary {
   status: string;
   createdAt: string;
   submittedAt: string | null;
-  business: { name: string; sector: { name: string } | null };
+  business: { id: string; name: string; sector: { name: string } | null };
   result: { overallScore: number; readinessLevel: string; riskLevel: string } | null;
 }
 export interface FeedbackItem {

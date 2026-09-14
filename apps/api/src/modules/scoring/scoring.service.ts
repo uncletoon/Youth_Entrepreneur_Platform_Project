@@ -55,7 +55,7 @@ export const calculateReadiness = (domains: DomainInput[]): ReadinessResult => {
     strengths,
     gaps,
     explanation: `Weighted readiness is ${score}/100; the lowest domain is ${criticalMinimum}/100.`,
-    rulesVersion: 'readiness-rules-v1',
+    rulesVersion: 'readiness-rules-v2',
     disclaimer:
       'This is an explainable preparedness-risk estimate, not a guarantee of business success.',
   };
