@@ -41,13 +41,6 @@ function Read-PostgresUrl([string]$Name) {
 }
 
 $application = Read-PostgresUrl 'DATABASE_URL'
-$administrator = Read-PostgresUrl 'DATABASE_ADMIN_URL'
-if ($application.Database -ne $administrator.Database -or $application.Port -ne $administrator.Port) {
-  throw "DATABASE_URL and DATABASE_ADMIN_URL must use the same database and port."
-}
-if ($application.User -eq $administrator.User) {
-  throw "The application and pgAdmin accounts must be different PostgreSQL roles."
-}
 
 $postgresRoot = 'C:\Program Files\PostgreSQL'
 $postgresBin = Get-ChildItem -LiteralPath $postgresRoot -Directory -ErrorAction SilentlyContinue |
@@ -68,10 +61,10 @@ New-Item -ItemType Directory -Path $runtimeRoot, $logDirectory -Force | Out-Null
 if (-not (Test-Path -LiteralPath (Join-Path $dataDirectory 'PG_VERSION'))) {
   $passwordFile = [System.IO.Path]::GetTempFileName()
   try {
-    [System.IO.File]::WriteAllText($passwordFile, $administrator.Password)
+    [System.IO.File]::WriteAllText($passwordFile, $application.Password)
     & (Join-Path $postgresBin 'initdb.exe') `
       -D $dataDirectory `
-      -U $administrator.User `
+      -U $application.User `
       --encoding=UTF8 `
       --auth-local=trust `
       --auth-host=scram-sha-256 `
@@ -88,61 +81,30 @@ if ($LASTEXITCODE -ne 0) {
   & (Join-Path $postgresBin 'pg_ctl.exe') `
     -D $dataDirectory `
     -l $logPath `
-    -o "-h 127.0.0.1 -p $($administrator.Port)" `
+    -o "-h 127.0.0.1 -p $($application.Port)" `
     start `
     -w
   if ($LASTEXITCODE -ne 0) { throw "PostgreSQL did not start. Review $logPath." }
 }
 
-$escapedPassword = $application.Password.Replace("'", "''")
 $previousPassword = $env:PGPASSWORD
-$env:PGPASSWORD = $administrator.Password
+$env:PGPASSWORD = $application.Password
 try {
-  $roleSql = @"
-DO `$`$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$($application.User)') THEN
-    ALTER ROLE $($application.User) WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$escapedPassword';
-  ELSE
-    CREATE ROLE $($application.User) WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '$escapedPassword';
-  END IF;
-END `$`$;
-"@
-  $roleSql | & (Join-Path $postgresBin 'psql.exe') `
-    -h 127.0.0.1 -p $administrator.Port -U $administrator.User -d postgres -X -v ON_ERROR_STOP=1
-  if ($LASTEXITCODE -ne 0) { throw "Could not configure the application database role." }
-
   $databaseExists = & (Join-Path $postgresBin 'psql.exe') `
-    -h 127.0.0.1 -p $administrator.Port -U $administrator.User -d postgres `
-    -X -tAc "SELECT 1 FROM pg_database WHERE datname = '$($administrator.Database)'"
+    -h 127.0.0.1 -p $application.Port -U $application.User -d postgres `
+    -X -tAc "SELECT 1 FROM pg_database WHERE datname = '$($application.Database)'"
   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the local PostgreSQL cluster." }
   if ([string]$databaseExists -ne '1') {
     & (Join-Path $postgresBin 'createdb.exe') `
-      -h 127.0.0.1 -p $administrator.Port -U $administrator.User -O $administrator.User `
-      $administrator.Database
-    if ($LASTEXITCODE -ne 0) { throw "Could not create database $($administrator.Database)." }
+      -h 127.0.0.1 -p $application.Port -U $application.User -O $application.User `
+      $application.Database
+    if ($LASTEXITCODE -ne 0) { throw "Could not create database $($application.Database)." }
   }
-
-  $grantSql = @"
-GRANT CONNECT ON DATABASE $($administrator.Database) TO $($application.User);
-GRANT USAGE ON SCHEMA public TO $($application.User);
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO $($application.User);
-GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO $($application.User);
-ALTER DEFAULT PRIVILEGES FOR ROLE $($administrator.User) IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $($application.User);
-ALTER DEFAULT PRIVILEGES FOR ROLE $($administrator.User) IN SCHEMA public
-  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO $($application.User);
-"@
-  $grantSql | & (Join-Path $postgresBin 'psql.exe') `
-    -h 127.0.0.1 -p $administrator.Port -U $administrator.User `
-    -d $administrator.Database -X -v ON_ERROR_STOP=1
-  if ($LASTEXITCODE -ne 0) { throw "Could not grant application database permissions." }
 }
 finally {
   $env:PGPASSWORD = $previousPassword
 }
 
-Write-Output "Native PostgreSQL is ready at 127.0.0.1:$($administrator.Port)/$($administrator.Database)."
-Write-Output "pgAdmin role: $($administrator.User)"
-Write-Output "Application role: $($application.User) (non-superuser)"
+Write-Output "Native PostgreSQL is ready at 127.0.0.1:$($application.Port)/$($application.Database)."
+Write-Output "Database role: $($application.User)"
 Write-Output "Data directory: $dataDirectory"

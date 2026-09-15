@@ -18,11 +18,11 @@ if (-not (Test-Path -LiteralPath $resolvedBackup -PathType Leaf)) {
   throw "Backup file not found."
 }
 $envPath = Join-Path $projectRoot ".env"
-$databaseLine = Get-Content -LiteralPath $envPath | Where-Object { $_ -match '^DATABASE_ADMIN_URL=' } | Select-Object -First 1
+$databaseLine = Get-Content -LiteralPath $envPath | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1
 if (-not $databaseLine) {
-  throw "DATABASE_ADMIN_URL is missing from the root .env file."
+  throw "DATABASE_URL is missing from the root .env file."
 }
-$databaseUrl = $databaseLine.Substring('DATABASE_ADMIN_URL='.Length).Trim()
+$databaseUrl = $databaseLine.Substring('DATABASE_URL='.Length).Trim()
 $pgRestore = Get-Command pg_restore.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
 if (-not $pgRestore) {
   $pgRestore = Get-ChildItem -LiteralPath 'C:\Program Files\PostgreSQL' -Directory -ErrorAction SilentlyContinue |

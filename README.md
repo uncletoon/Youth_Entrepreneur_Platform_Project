@@ -50,20 +50,8 @@ cluster under `%LOCALAPPDATA%\YERSPS\PostgreSQL`; Docker is not required. The de
 `55432`, which avoids conflicts with other PostgreSQL installations. Stop only this project cluster
 with `npm run db:local:stop`.
 
-### pgAdmin connection
-
-pgAdmin 4 can connect directly to the native cluster; no container or Docker network is involved.
-The project registers a server named `YERSPS Local PostgreSQL` with these values:
-
-- Host: `127.0.0.1`
-- Port: `55432`
-- Maintenance database: `yersps`
-- Username: `yersps_pgadmin`
-- Password: the password in `DATABASE_ADMIN_URL`
-
-The API uses the separate `yersps_app` role from `DATABASE_URL`. That role cannot create databases,
-create roles, or act as a PostgreSQL superuser. Run `npm run db:local:start` before opening the
-registered pgAdmin server after a reboot.
+pgAdmin 4 can connect directly to the native cluster; use the username and password from
+`DATABASE_URL`, with host `127.0.0.1`, port `55432`, and database `yersps`.
 
 In development, authentication attempts are not rate limited, so repeated local testing does not
 show a "too many attempts" response. Production keeps the 20-attempt-per-15-minute protection.

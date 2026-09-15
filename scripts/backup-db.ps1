@@ -8,11 +8,11 @@ $envPath = Join-Path $projectRoot ".env"
 if (-not (Test-Path -LiteralPath $envPath)) {
   throw "The root .env file is required."
 }
-$databaseLine = Get-Content -LiteralPath $envPath | Where-Object { $_ -match '^DATABASE_ADMIN_URL=' } | Select-Object -First 1
+$databaseLine = Get-Content -LiteralPath $envPath | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1
 if (-not $databaseLine) {
-  throw "DATABASE_ADMIN_URL is missing from the root .env file."
+  throw "DATABASE_URL is missing from the root .env file."
 }
-$databaseUrl = $databaseLine.Substring('DATABASE_ADMIN_URL='.Length).Trim()
+$databaseUrl = $databaseLine.Substring('DATABASE_URL='.Length).Trim()
 $defaultBackupRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "YERSPS\Backups"))
 $resolvedOutput = if ($OutputDirectory) {
   [System.IO.Path]::GetFullPath($OutputDirectory)
